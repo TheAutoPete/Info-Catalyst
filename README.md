@@ -1,83 +1,93 @@
 # Info Catalyst
 
-標準啟動方式是使用專案內建的啟動器 `run_app.ps1`：
+Info Catalyst 是一個 Windows / PowerShell 友善的 Streamlit MVP，用來從 YouTube 影片取得逐字稿，並透過 OpenAI 產生 Summary Report 與 Deep Analysis Report。產出的 Markdown 報告會寫入 `reports/markdown`。
+
+## 快速開始
 
 ```powershell
-cd "C:\Users\Peter\Desktop\Tech Project\2026 - Project Titan\Info Catalyst\Info-Catalyst"
+# 進入你 clone 下來的專案根目錄
+cd path\to\info-catalyst
+
+# 使用啟動器啟動 Info Catalyst
 .\run_app.ps1
 ```
 
-`run_app.ps1` 會使用本專案虛擬環境裡的 Python 啟動 Streamlit：
+請把 `path\to\info-catalyst` 換成你自己電腦上的專案路徑。
+
+「專案根目錄」是包含 `app.py`、`README.md`、`requirements.txt`、`run_app.ps1` 的資料夾。請在這個資料夾執行安裝、設定與啟動指令。
+
+`run_app.ps1` 會使用專案自己的虛擬環境 Python 啟動 Streamlit。目前啟動器內容是：
 
 ```powershell
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-請不要直接使用：
+私人使用時，建議讓 App 只在本機開啟，也就是使用 `localhost`。若未來要調整啟動器，可以使用這種形式：
 
 ```powershell
-streamlit run app.py
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.address localhost
 ```
 
-因為這樣可能會不小心用到電腦全域安裝的 Python 或 Streamlit，而不是本專案 `.venv` 裡的環境，導致套件版本、API key 讀取或執行結果不一致。
+## Windows 第一次設定
 
-## 快速啟動
-
-1. 開啟 PowerShell。
-2. 切換到專案根目錄：
+第一次在新電腦或新資料夾使用時，請在 PowerShell 執行：
 
 ```powershell
-cd "C:\Users\Peter\Desktop\Tech Project\2026 - Project Titan\Info Catalyst\Info-Catalyst"
-```
-
-3. 執行啟動器：
-
-```powershell
+git clone <REPO_URL>
+cd info-catalyst
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+copy .env.example .env
+notepad .env
 .\run_app.ps1
 ```
 
-4. 如果瀏覽器沒有自動開啟，請手動打開：
+請把 `<REPO_URL>` 換成實際的 Git repository URL。開啟 `.env` 後，填入你自己的 OpenAI API key。
+
+## 日常使用
+
+平常已經設定好之後，只需要：
+
+```powershell
+cd path\to\info-catalyst
+.\run_app.ps1
+```
+
+不需要每次都重新安裝 `requirements.txt`。只有在專案依賴套件更新，或重新建立 `.venv` 時，才需要再次執行安裝指令。
+
+啟動後，Streamlit 通常會顯示本機網址，例如：
 
 ```text
 http://localhost:8501
 ```
 
-5. 要停止 App，回到 PowerShell 視窗按 `Ctrl + C`。
+使用完畢後，回到 PowerShell 視窗按 `Ctrl + C` 停止 App。
 
-## 專案用途
+## 重要提醒：不要直接執行 streamlit
 
-Info Catalyst 是一個 Streamlit MVP，用來把 YouTube 影片逐字稿轉成 AI 產出的研究報告。它目前的用途是：
+請優先使用：
 
-- 接受 YouTube 連結。
-- 擷取影片逐字稿或字幕。
-- 產生 Summary Report。
-- 產生 Deep Analysis Report。
-- 以台灣用語的繁體中文輸出報告。
-- 支援來源逐字稿為繁體中文、簡體中文或英文。
+```powershell
+.\run_app.ps1
+```
 
-這個專案是給非工程背景的專案擁有者使用，日常開發可由 Codex 協助修改與除錯；實際啟動與測試 App，建議在一般 PowerShell 內執行。
+不建議直接執行：
 
-## 目前 MVP 功能
+```powershell
+streamlit run app.py
+```
 
-- YouTube URL 輸入。
-- YouTube 影片 ID 解析。
-- 公開逐字稿與自動字幕擷取。
-- 顯示可用字幕語言與目前選用的字幕。
-- 逐字稿預覽。
-- 自動擷取失敗時，可手動貼上逐字稿作為備援。
-- Summary Report 產生。
-- Deep Analysis Report 產生。
-- Markdown 報告儲存到 `reports/markdown`。
+因為這樣可能會用到全域 Python 或全域 Streamlit，而不是專案 `.venv` 裡的環境。這可能造成套件版本不同、找不到 API key，或在 Codex 協助開發時出現難以追蹤的環境問題。
 
-## 環境設定
+## 環境變數與 API Key
 
-`.env` 用來在本機保存真正的 OpenAI API key。這個檔案只能留在自己的電腦上，絕對不要 commit 到 Git。
+`.env` 是放在你自己電腦上的本機設定檔，裡面存放真正的 OpenAI API key。`.env` 不可以 commit 到 Git，也不應該分享給其他人。
 
-`.env.example` 是安全的範本，可以放在 Git 裡，因為裡面不應包含任何真實 API key。
+`.env.example` 是安全的範本，可以放在 Git 裡，讓其他使用者知道需要哪些設定欄位。
 
-OpenAI API key 建議在 OpenAI 專案 `Info Catalyst` 底下建立，方便之後管理權限、費用與使用紀錄。
-
-安全範例：
+請自行到 OpenAI 建立 API key，然後填入 `.env`。範例格式：
 
 ```env
 OPENAI_API_KEY=
@@ -85,82 +95,51 @@ SUMMARY_MODEL=
 ANALYSIS_MODEL=
 ```
 
-注意：目前程式碼實際讀取的是 `OPENAI_API_KEY` 與 `OPENAI_MODEL`。如果目前版本還沒有支援 Summary / Analysis 分別指定模型，請依照 `.env.example` 使用：
+請不要把真實 API key 寫進 `README.md`、程式碼、commit 訊息或任何公開文件。
 
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4.1-mini
-```
+## 本機安全建議
 
-請不要把真實 key 貼到 README、Git commit、聊天紀錄或任何公開位置。
+一般私人使用請使用 `localhost`。這表示 App 只給你目前這台電腦使用。
 
-## 安裝流程
+Streamlit 有時也會顯示 Network URL。除非你明確想讓同一個區域網路內的其他裝置連進來，否則不要分享 Network URL。
 
-第一次設定專案，或重新建立 `.venv` 時，使用以下指令：
+使用完畢請在 PowerShell 按 `Ctrl + C` 關閉 App。
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+## 專案功能
 
-安裝完成後，請建立自己的 `.env`：
+- 接收 YouTube URL。
+- 解析 YouTube 影片 ID。
+- 優先使用逐字稿擷取內容。
+- 產生 Summary Report。
+- 產生 Deep Analysis Report。
+- 將 Markdown 報告輸出到 `reports/markdown`。
 
-```powershell
-Copy-Item .env.example .env
-```
-
-然後用文字編輯器打開 `.env`，填入自己的 OpenAI API key。
-
-日常使用通常不需要重新安裝 requirements；只有在 `requirements.txt` 有變更、套件遺失，或重新建立 `.venv` 時，才需要再執行安裝流程。
-
-## 標準日常使用流程
-
-每天要啟動 App 時，使用：
-
-```powershell
-cd "C:\Users\Peter\Desktop\Tech Project\2026 - Project Titan\Info Catalyst\Info-Catalyst"
-.\run_app.ps1
-```
-
-啟動後，在瀏覽器打開 `http://localhost:8501`，貼上 YouTube 連結，確認逐字稿預覽，再產生報告。
-
-## 重要注意事項
-
-- 不要 commit `.env`。
-- 不要 commit `.venv`。
-- 不要把 API key、密碼、generated secrets 或 Streamlit 本機 secrets 放進 Git。
-- 請使用 `.\run_app.ps1`，不要直接使用 `streamlit run app.py`。
-- App 請從一般 PowerShell 啟動，不要從 Codex 裡面啟動。
-- Codex 適合用來協助編輯、解釋與除錯程式碼；PowerShell 適合用來啟動與測試 App。
-- 產生的 Markdown 報告會寫到 `reports/markdown`。
-- 這個 MVP 採用 transcript-first 流程：先嘗試取得 YouTube 逐字稿或字幕，不優先做音訊下載、音訊轉錄或網頁爬取。
+這個 MVP 以 transcript-first 為優先：先嘗試取得 YouTube 逐字稿，再考慮其他備援方式。這樣比較快，也比較適合保持專案簡潔。
 
 ## 專案結構
 
-目前主要檔案與資料夾如下：
+以下是目前 repository 中主要檔案與資料夾：
 
 ```text
 app.py
-  Streamlit App 主程式。
+  Streamlit App 入口。
 
 config.py
-  讀取 .env 設定，包含 OpenAI API key、模型名稱、prompt 路徑與報告輸出路徑。
+  讀取 .env 設定，例如 OpenAI API key 與模型名稱。
 
 run_app.ps1
-  標準啟動器，使用 .venv 裡的 Python 執行 Streamlit。
+  Windows PowerShell 啟動器，使用 .venv 裡的 Python 啟動 Streamlit。
 
 requirements.txt
   Python 套件清單。
 
 .env.example
-  安全的環境變數範本，不包含真實 API key。
+  環境變數範本，不包含真實 API key。
 
 prompts/
   analysis_prompt.md
   summary_prompt.md
-  AI 報告產生時使用的 prompt 範本。
+  AI 報告產生用的 prompt 範本。
 
 services/
   analyst.py
@@ -170,98 +149,98 @@ services/
   summarizer.py
   transcript_provider.py
   url_parser.py
-  App 的主要功能模組，包含逐字稿取得、prompt 組合、OpenAI 呼叫與報告儲存。
+  __init__.py
+  App 的主要服務模組，例如逐字稿取得、URL 解析、prompt 載入、OpenAI 呼叫與報告寫入。
 
-reports/markdown/
-  產生的 Markdown 報告輸出位置。
+reports/
+  markdown/
+  產出的 Markdown 報告位置。
 
 tests/
   test_prompt_format.py
   test_transcript_provider.py
   test_url_parser.py
-  低成本、可重複的自動化測試。
+  低成本、可重複執行的測試。
 
 check_transcript.py
-  開發與除錯用的小工具，用來檢查 YouTube 影片可用的逐字稿。
+  檢查 YouTube 逐字稿擷取狀況的輔助腳本。
 
 AGENTS.md
-  Codex / agent 使用此專案時的協作注意事項。
+  Codex / agent 協作時的專案注意事項。
+
+.gitignore
+  Git 忽略規則。
 ```
 
-本機產生的 `.venv`、`.env`、`__pycache__`、pytest cache 與其他暫存資料不應視為需要手動維護的專案內容。
+本機產生或私人使用的檔案，例如 `.env`、`.venv`、`__pycache__`、pytest cache，不應該作為一般專案文件要求其他使用者手動修改或 commit。
 
 ## Troubleshooting
 
-PowerShell 擋下 `run_app.ps1`：
+### PowerShell 封鎖 run_app.ps1
 
-如果看到執行原則相關錯誤，可以在目前這次 PowerShell 工作階段允許本機 script：
+如果 PowerShell 不讓你執行腳本，可以只針對目前 PowerShell 視窗暫時放行：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\run_app.ps1
 ```
 
-缺少 `.env`：
+### 找不到 .env
 
-如果還沒有 `.env`，請先複製範本：
+請先從範本建立自己的 `.env`：
 
 ```powershell
-Copy-Item .env.example .env
+copy .env.example .env
+notepad .env
 ```
 
-然後打開 `.env`，填入 OpenAI API key。
-
-找不到 OpenAI API key：
+### 找不到 OpenAI API key
 
 請確認 `.env` 裡有設定：
 
 ```env
-OPENAI_API_KEY=你的真實 API key
+OPENAI_API_KEY=你的 OpenAI API key
 ```
 
-也請確認是用 `.\run_app.ps1` 啟動，而不是從其他資料夾或其他 Python 環境啟動。
+不要把 `你的 OpenAI API key` 這幾個字原樣留下來，請換成你自己建立的真實 key。
 
-逐字稿擷取失敗：
+### Transcript extraction fails
 
-可能原因包含影片沒有公開逐字稿、字幕被關閉、影片限制、YouTube 暫時阻擋請求，或該字幕語言不可用。此時可以把逐字稿手動貼到 App 的 manual transcript fallback 欄位，繼續產生報告。
+有些 YouTube 影片沒有可用逐字稿、關閉字幕，或受到地區與權限限制。遇到這種情況時，可以換一支有字幕或逐字稿的影片測試。這個 MVP 目前以逐字稿優先，不以音訊下載或網頁爬取作為主要流程。
 
-Streamlit 不小心用到全域 Python：
+### Streamlit 不小心用到全域 Python
 
-請停止 App，改用：
+請確認你是用啟動器：
 
 ```powershell
-cd "C:\Users\Peter\Desktop\Tech Project\2026 - Project Titan\Info Catalyst\Info-Catalyst"
 .\run_app.ps1
 ```
 
-確認 Python 路徑：
+不要直接用：
 
-在啟用 `.venv` 後，可以執行：
+```powershell
+streamlit run app.py
+```
+
+### 如何確認 Python 路徑
+
+如果你已經啟用 `.venv`，可以用：
 
 ```powershell
 python -c "import sys; print(sys.executable)"
 ```
 
-如果是專案虛擬環境，路徑應該會指向：
+正常情況下，輸出路徑應該指向你的專案資料夾底下的 `.venv\Scripts\python.exe`，而不是系統全域 Python。
 
-```text
-C:\Users\Peter\Desktop\Tech Project\2026 - Project Titan\Info Catalyst\Info-Catalyst\.venv\Scripts\python.exe
-```
+## Git 工作流程
 
-## Git 工作流
-
-查看目前有哪些檔案變更：
+更新 README 後，可以用：
 
 ```powershell
 git status
-```
-
-提交 README 更新：
-
-```powershell
-git add .
-git commit -m "Update README"
+git add README.md
+git commit -m "Update README quick start guide"
 git push
 ```
 
-提交前請再次確認沒有把 `.env`、`.venv`、API key 或其他秘密資訊加入 Git。
+commit 前請再次確認沒有加入 `.env`、API key、`.venv` 或其他本機產生的私人檔案。
