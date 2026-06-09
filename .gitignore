@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Info Catalyst generated reports
+reports/markdown/*.md
+!reports/markdown/.gitkeep
