@@ -1,4 +1,6 @@
 from services.analyst import build_analysis_prompt
+from services.mode_prompts import build_mode_report_prompt
+from services.model_profiles import get_default_profile
 from services.prompt_loader import format_prompt
 from services.summarizer import build_summary_prompt
 
@@ -37,4 +39,21 @@ def test_analysis_prompt_contains_required_sections():
     assert "## Counterarguments" in prompt
     assert "## Investment / Intelligence Implications" in prompt
     assert "## What To Verify Next" in prompt
+    assert "Transcript body" in prompt
+
+
+def test_mode_prompt_contains_shared_language_requirement():
+    prompt = build_mode_report_prompt(
+        "Transcript body",
+        "https://youtu.be/dQw4w9WgXcQ",
+        analysis_mode="Investment Lens",
+        profile=get_default_profile("Investment Lens"),
+    )
+
+    assert "Final output must be in Taiwan-style Traditional Chinese." in prompt
+    assert "Convert Simplified Chinese terms to Traditional Chinese." in prompt
+    assert "## 投資摘要" in prompt
+    assert "## 對 portfolio / watchlist 的啟示" in prompt
+    assert "model: gpt-5.5" in prompt
+    assert "reasoning_effort: high" in prompt
     assert "Transcript body" in prompt

@@ -1,40 +1,21 @@
 # Info Catalyst
 
-Info Catalyst 是一個 Windows / PowerShell 友善的 Streamlit MVP，用來從 YouTube 影片取得逐字稿，並透過 OpenAI 產生 Summary Report 與 Deep Analysis Report。產出的 Markdown 報告會寫入 `reports/markdown`。
+Info Catalyst 是本機 Streamlit MVP，用來把 YouTube 逐字稿或使用者提供的文字轉成研究型 Markdown 報告。專案優先採用 transcript-first 流程，並用本地 cache 降低重複向 YouTube 索取字幕的機率。
 
-## 快速開始
+## 啟動方式
+
+請優先使用專案啟動器：
 
 ```powershell
-# 進入你 clone 下來的專案根目錄
-cd path\to\info-catalyst
-
-# 使用啟動器啟動 Info Catalyst
+cd path\to\Info-Catalyst
 .\run_app.ps1
 ```
 
-請把 `path\to\info-catalyst` 換成你自己電腦上的專案路徑。
+不要直接用全域 Python 執行 `streamlit run app.py`，避免套件版本、`.env`、API key 讀取路徑不一致。
 
-「專案根目錄」是包含 `app.py`、`README.md`、`requirements.txt`、`run_app.ps1` 的資料夾。請在這個資料夾執行安裝、設定與啟動指令。
-
-`run_app.ps1` 會使用專案自己的虛擬環境 Python 啟動 Streamlit。目前啟動器內容是：
+第一次設定：
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py
-```
-
-私人使用時，建議讓 App 只在本機開啟，也就是使用 `localhost`。若未來要調整啟動器，可以使用這種形式：
-
-```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py --server.address localhost
-```
-
-## Windows 第一次設定
-
-第一次在新電腦或新資料夾使用時，請在 PowerShell 執行：
-
-```powershell
-git clone <REPO_URL>
-cd info-catalyst
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -44,203 +25,127 @@ notepad .env
 .\run_app.ps1
 ```
 
-請把 `<REPO_URL>` 換成實際的 Git repository URL。開啟 `.env` 後，填入你自己的 OpenAI API key。
-
-## 日常使用
-
-平常已經設定好之後，只需要：
-
-```powershell
-cd path\to\info-catalyst
-.\run_app.ps1
-```
-
-不需要每次都重新安裝 `requirements.txt`。只有在專案依賴套件更新，或重新建立 `.venv` 時，才需要再次執行安裝指令。
-
-啟動後，Streamlit 通常會顯示本機網址，例如：
-
-```text
-http://localhost:8501
-```
-
-使用完畢後，回到 PowerShell 視窗按 `Ctrl + C` 停止 App。
-
-## 重要提醒：不要直接執行 streamlit
-
-請優先使用：
-
-```powershell
-.\run_app.ps1
-```
-
-不建議直接執行：
-
-```powershell
-streamlit run app.py
-```
-
-因為這樣可能會用到全域 Python 或全域 Streamlit，而不是專案 `.venv` 裡的環境。這可能造成套件版本不同、找不到 API key，或在 Codex 協助開發時出現難以追蹤的環境問題。
-
-## 環境變數與 API Key
-
-`.env` 是放在你自己電腦上的本機設定檔，裡面存放真正的 OpenAI API key。`.env` 不可以 commit 到 Git，也不應該分享給其他人。
-
-`.env.example` 是安全的範本，可以放在 Git 裡，讓其他使用者知道需要哪些設定欄位。
-
-請自行到 OpenAI 建立 API key，然後填入 `.env`。範例格式：
+`.env` 範例：
 
 ```env
-OPENAI_API_KEY=
-SUMMARY_MODEL=
-ANALYSIS_MODEL=
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-5.4-mini
+OPENAI_TRANSCRIPTION_MODEL=whisper-1
+OPENAI_USE_SYSTEM_PROXY=false
 ```
 
-請不要把真實 API key 寫進 `README.md`、程式碼、commit 訊息或任何公開文件。
+不要 commit `.env`、API keys、generated secrets、local Streamlit secrets 或 `.venv`。
 
-## 本機安全建議
+## Transcript Flow
 
-一般私人使用請使用 `localhost`。這表示 App 只給你目前這台電腦使用。
+YouTube 可能會對過度頻繁的自動字幕請求做流量限制，常見錯誤是 `RequestBlocked` 或 `IpBlocked`。Info Catalyst 現在採用 cache-first 與明確按鈕觸發：
 
-Streamlit 有時也會顯示 Network URL。除非你明確想讓同一個區域網路內的其他裝置連進來，否則不要分享 Network URL。
+1. 貼上 YouTube URL。
+2. App 解析 video ID。
+3. App 先檢查 `reports/transcripts/{video_id}.json`。
+4. 如果有 cache，預設載入本地 transcript，並顯示 `Loaded transcript from local cache.`。
+5. 只有使用者明確點擊 `Fetch transcript from YouTube` 或 `Refresh transcript from YouTube` 時，才會呼叫 YouTube。
+6. Refresh 有冷卻時間，避免 Streamlit rerun 或連續點擊造成重複請求。
+7. Report generation 只使用已準備好的 transcript，不會再呼叫 YouTube。
 
-使用完畢請在 PowerShell 按 `Ctrl + C` 關閉 App。
-
-## 專案功能
-
-- 接收 YouTube URL。
-- 解析 YouTube 影片 ID。
-- 優先使用逐字稿擷取內容。
-- 產生 Summary Report。
-- 產生 Deep Analysis Report。
-- 將 Markdown 報告輸出到 `reports/markdown`。
-
-這個 MVP 以 transcript-first 為優先：先嘗試取得 YouTube 逐字稿，再考慮其他備援方式。這樣比較快，也比較適合保持專案簡潔。
-
-## 專案結構
-
-以下是目前 repository 中主要檔案與資料夾：
+Transcript cache 存在：
 
 ```text
-app.py
-  Streamlit App 入口。
-
-config.py
-  讀取 .env 設定，例如 OpenAI API key 與模型名稱。
-
-run_app.ps1
-  Windows PowerShell 啟動器，使用 .venv 裡的 Python 啟動 Streamlit。
-
-requirements.txt
-  Python 套件清單。
-
-.env.example
-  環境變數範本，不包含真實 API key。
-
-prompts/
-  analysis_prompt.md
-  summary_prompt.md
-  AI 報告產生用的 prompt 範本。
-
-services/
-  analyst.py
-  openai_client.py
-  prompt_loader.py
-  report_writer.py
-  summarizer.py
-  transcript_provider.py
-  url_parser.py
-  __init__.py
-  App 的主要服務模組，例如逐字稿取得、URL 解析、prompt 載入、OpenAI 呼叫與報告寫入。
-
-reports/
-  markdown/
-  產出的 Markdown 報告位置。
-
-tests/
-  test_prompt_format.py
-  test_transcript_provider.py
-  test_url_parser.py
-  低成本、可重複執行的測試。
-
-check_transcript.py
-  檢查 YouTube 逐字稿擷取狀況的輔助腳本。
-
-AGENTS.md
-  Codex / agent 協作時的專案注意事項。
-
-.gitignore
-  Git 忽略規則。
+reports/transcripts/
 ```
 
-本機產生或私人使用的檔案，例如 `.env`、`.venv`、`__pycache__`、pytest cache，不應該作為一般專案文件要求其他使用者手動修改或 commit。
+cache 內容包含來源、video ID、URL、語言、逐字稿全文、provider、建立/擷取時間與可用字幕 metadata。
 
-## Troubleshooting
+## Fallback Options
 
-### PowerShell 封鎖 run_app.ps1
+如果 YouTube transcript extraction 失敗，請不要一直 refresh。可以改用：
 
-如果 PowerShell 不讓你執行腳本，可以只針對目前 PowerShell 視窗暫時放行：
+- 載入本地 cached transcript
+- 手動貼上 transcript，並按 `Save manual transcript to cache`
+- 明確勾選確認後使用 `Use audio transcription fallback`
+
+Audio transcription fallback 是 opt-in。它可能下載音訊並呼叫 OpenAI transcription，會比 YouTube 字幕擷取慢，也可能產生額外 API 成本。只有在使用者明確確認並按下按鈕後才會執行。
+
+## Analysis Modes
+
+- `Quick Summary`
+- `Deep Analysis`
+- `Investment Lens`
+- `Bias Check`
+- `Titan Input / Structured Research`
+
+輸出報告維持台灣慣用繁體中文。可使用預設 model profile，也可以勾選 `Override model settings` 覆寫 model 與 reasoning effort。
+
+## Reports And Metadata
+
+Markdown 報告：
+
+```text
+reports/markdown
+```
+
+Metadata：
+
+```text
+reports/metadata
+```
+
+Context Pack：
+
+```text
+reports/context
+```
+
+metadata 會記錄 video ID、source URL、analysis mode、model profile、usage，以及 transcript 來源資訊：
+
+- `transcript_source`
+- `transcript_provider`
+- `transcript_cache_path`
+- `transcript_language`
+- `transcript_created_at`
+
+舊 metadata 仍可相容讀取。
+
+## Cost & Token Estimate
+
+產生報告前會顯示：
+
+- transcript 字元數
+- approximate transcript token count
+- analysis mode
+- report model
+- reasoning effort
+- qualitative cost level：Low / Medium / High / Very High
+
+若成本等級是 High 或 Very High，必須勾選確認後才能產生報告。Audio transcription fallback 會另外顯示成本與耗時提醒。
+
+## Debugging
+
+預設不顯示 traceback。勾選 `Show debug info` 後可看到：
+
+- parsed video ID
+- transcript source
+- cache path
+- available transcript languages
+- cache 是否使用
+- YouTube 是否被呼叫
+- exception type/message
+- full traceback
+
+錯誤會寫入 `logs/app.log`。不要在 log、README 或 commit 中放 API key。
+
+## Tests
+
+執行全部測試：
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\run_app.ps1
+.\.venv\Scripts\python.exe -m pytest -q --basetemp tests\.tmp\pytest
 ```
 
-### 找不到 .env
-
-請先從範本建立自己的 `.env`：
+常用局部測試：
 
 ```powershell
-copy .env.example .env
-notepad .env
+.\.venv\Scripts\python.exe -m pytest tests\test_transcript_cache.py tests\test_transcript_provider.py -q --basetemp tests\.tmp\pytest
 ```
 
-### 找不到 OpenAI API key
-
-請確認 `.env` 裡有設定：
-
-```env
-OPENAI_API_KEY=你的 OpenAI API key
-```
-
-不要把 `你的 OpenAI API key` 這幾個字原樣留下來，請換成你自己建立的真實 key。
-
-### Transcript extraction fails
-
-有些 YouTube 影片沒有可用逐字稿、關閉字幕，或受到地區與權限限制。遇到這種情況時，可以換一支有字幕或逐字稿的影片測試。這個 MVP 目前以逐字稿優先，不以音訊下載或網頁爬取作為主要流程。
-
-### Streamlit 不小心用到全域 Python
-
-請確認你是用啟動器：
-
-```powershell
-.\run_app.ps1
-```
-
-不要直接用：
-
-```powershell
-streamlit run app.py
-```
-
-### 如何確認 Python 路徑
-
-如果你已經啟用 `.venv`，可以用：
-
-```powershell
-python -c "import sys; print(sys.executable)"
-```
-
-正常情況下，輸出路徑應該指向你的專案資料夾底下的 `.venv\Scripts\python.exe`，而不是系統全域 Python。
-
-## Git 工作流程
-
-更新 README 後，可以用：
-
-```powershell
-git status
-git add README.md
-git commit -m "Update README quick start guide"
-git push
-```
-
-commit 前請再次確認沒有加入 `.env`、API key、`.venv` 或其他本機產生的私人檔案。
+單元測試不需要真實 YouTube 或 OpenAI API call。
