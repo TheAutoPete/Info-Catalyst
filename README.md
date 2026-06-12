@@ -36,6 +36,10 @@ OPENAI_USE_SYSTEM_PROXY=false
 
 不要 commit `.env`、API keys、generated secrets、local Streamlit secrets 或 `.venv`。
 
+## Current Architecture
+
+目前 repo 架構、app flow、資料目錄、測試政策與下一步安全重構邊界，請見 [`docs/repo-status.md`](docs/repo-status.md)。
+
 ## Transcript Flow
 
 YouTube 可能會對過度頻繁的自動字幕請求做流量限制，常見錯誤是 `RequestBlocked` 或 `IpBlocked`。Info Catalyst 現在採用 cache-first 與明確按鈕觸發：

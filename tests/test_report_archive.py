@@ -92,6 +92,27 @@ def test_recent_reports_and_duplicate_lookup_use_metadata():
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+def test_recent_reports_include_legacy_markdown_without_metadata():
+    workspace = _workspace_tmp_dir()
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    reports_dir.mkdir(parents=True)
+    metadata_dir.mkdir(parents=True)
+    legacy_path = reports_dir / "20260610-120000-summary-dQw4w9WgXcQ.md"
+    legacy_path.write_text("# Legacy\n", encoding="utf-8")
+
+    try:
+        recent = list_recent_reports(reports_dir=reports_dir, metadata_dir=metadata_dir)
+
+        assert len(recent) == 1
+        assert recent[0].report_path == legacy_path
+        assert recent[0].metadata_path is None
+        assert recent[0].report_type == "summary"
+        assert recent[0].video_id == "dQw4w9WgXcQ"
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
 def _workspace_tmp_dir() -> Path:
     path = Path("tests") / ".tmp" / f"report-archive-{uuid.uuid4().hex}"
     path.mkdir(parents=True)
