@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from config import REPORTS_DIR, REPORT_METADATA_DIR
+from services.output_languages import get_output_language
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,8 @@ class ReportRecord:
     transcript_provider: str = ""
     transcript_cache_path: str = ""
     transcript_created_at: str = ""
+    output_language: str = ""
+    output_language_label: str = ""
 
     @property
     def display_title(self) -> str:
@@ -54,6 +57,8 @@ def save_archived_report(
     transcript_provider: str = "",
     transcript_cache_path: str = "",
     transcript_created_at: str = "",
+    output_language: str = "",
+    output_language_label: str = "",
     generated_at: datetime | None = None,
     reports_dir: Path = REPORTS_DIR,
     metadata_dir: Path = REPORT_METADATA_DIR,
@@ -69,6 +74,7 @@ def save_archived_report(
     filename = f"{timestamp}_{title_slug}_{video_slug}_{report_slug}.md"
     report_path = _dedupe_path(reports_dir / filename)
     report_path.write_text(content.strip() + "\n", encoding="utf-8")
+    language = get_output_language(output_language or output_language_label)
 
     metadata_path = report_path.with_suffix(".json")
     metadata_path = metadata_dir / metadata_path.name
@@ -89,6 +95,8 @@ def save_archived_report(
         "transcript_provider": transcript_provider,
         "transcript_cache_path": transcript_cache_path,
         "transcript_created_at": transcript_created_at,
+        "output_language": language.code,
+        "output_language_label": output_language_label or language.label,
         "report_file_path": str(report_path),
         "report_type": report_type,
     }
@@ -113,6 +121,8 @@ def save_archived_report(
         transcript_provider=transcript_provider,
         transcript_cache_path=transcript_cache_path,
         transcript_created_at=transcript_created_at,
+        output_language=language.code,
+        output_language_label=output_language_label or language.label,
     )
 
 
@@ -219,6 +229,7 @@ def _load_metadata_records(metadata_dir: Path) -> list[ReportRecord]:
 
 def _record_from_metadata(metadata_path: Path, metadata: dict[str, Any]) -> ReportRecord:
     report_path = Path(metadata.get("report_file_path", ""))
+    language = get_output_language(str(metadata.get("output_language") or metadata.get("output_language_label") or ""))
     return ReportRecord(
         report_path=report_path,
         metadata_path=metadata_path,
@@ -238,6 +249,8 @@ def _record_from_metadata(metadata_path: Path, metadata: dict[str, Any]) -> Repo
         transcript_provider=str(metadata.get("transcript_provider") or ""),
         transcript_cache_path=str(metadata.get("transcript_cache_path") or ""),
         transcript_created_at=str(metadata.get("transcript_created_at") or ""),
+        output_language=str(metadata.get("output_language") or language.code),
+        output_language_label=str(metadata.get("output_language_label") or language.label),
     )
 
 
@@ -256,6 +269,8 @@ def _record_from_legacy_markdown(path: Path) -> ReportRecord:
         selected_model="",
         reasoning_effort="",
         model_override=False,
+        output_language=get_output_language().code,
+        output_language_label=get_output_language().label,
     )
 
 

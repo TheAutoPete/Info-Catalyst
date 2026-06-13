@@ -10,6 +10,7 @@ from config import LOGS_DIR
 from services import mode_prompts as _mode_prompts
 from services import model_profiles as _model_profiles
 from services import openai_client as _openai_client
+from services import output_languages as _output_languages
 from services import report_writer as _report_writer
 from services import transcript_provider as _transcript_provider
 from services import transcript_cache as _transcript_cache
@@ -39,6 +40,11 @@ resolve_model_profile = model_profiles.resolve_model_profile
 mode_prompts = importlib.reload(_mode_prompts)
 add_report_header = mode_prompts.add_report_header
 build_mode_report_prompt = mode_prompts.build_mode_report_prompt
+output_languages = importlib.reload(_output_languages)
+DEFAULT_OUTPUT_LANGUAGE = output_languages.DEFAULT_OUTPUT_LANGUAGE
+get_default_output_language = output_languages.get_default_output_language
+get_output_language = output_languages.get_output_language
+get_output_language_labels = output_languages.get_output_language_labels
 openai_client = importlib.reload(_openai_client)
 OpenAIRequestError = openai_client.OpenAIRequestError
 generate_markdown_with_usage = openai_client.generate_markdown_with_usage
@@ -322,6 +328,14 @@ analysis_mode = st.selectbox(
     index=MODE_NAMES.index(DEFAULT_ANALYSIS_MODE),
 )
 selected_mode = get_analysis_mode(analysis_mode)
+output_language_labels = get_output_language_labels()
+default_output_language = get_default_output_language()
+selected_output_language_label = st.selectbox(
+    "Report Output Language",
+    output_language_labels,
+    index=output_language_labels.index(default_output_language.label),
+)
+selected_output_language = get_output_language(selected_output_language_label)
 default_profile = get_default_profile(analysis_mode)
 override_model_settings = st.checkbox("Override model settings", value=False)
 
@@ -344,7 +358,7 @@ selected_profile = resolve_model_profile(
 )
 st.caption(
     f"Selected profile: {selected_profile.model} / reasoning_effort={selected_profile.reasoning_effort} "
-    f"({selected_profile.use_case})"
+    f"({selected_profile.use_case}) | Output language: {selected_output_language.label}"
 )
 if is_high_cost_profile(selected_profile):
     st.warning("This mode may use more tokens and cost more.")
@@ -593,6 +607,7 @@ if generate:
             youtube_url,
             analysis_mode=analysis_mode,
             profile=selected_profile,
+            output_language=selected_output_language.code,
         )
 
         with st.spinner(f"Generating {analysis_mode} report..."):
@@ -609,6 +624,7 @@ if generate:
                 model=selected_profile.model,
                 reasoning_effort=selected_profile.reasoning_effort,
                 override=override_model_settings,
+                output_language_label=selected_output_language.label,
             )
             report_path = save_report_with_metadata(
                 report_type,
@@ -627,6 +643,8 @@ if generate:
                 transcript_provider=prepared.get("provider", ""),
                 transcript_cache_path=prepared.get("cache_path", ""),
                 transcript_created_at=prepared.get("created_at", ""),
+                output_language=selected_output_language.code,
+                output_language_label=selected_output_language.label,
             )
 
         st.subheader(f"{analysis_mode} Report")

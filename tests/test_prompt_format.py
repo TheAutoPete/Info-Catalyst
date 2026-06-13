@@ -48,6 +48,7 @@ def test_mode_prompt_contains_shared_language_requirement():
         "https://youtu.be/dQw4w9WgXcQ",
         analysis_mode="Investment Lens",
         profile=get_default_profile("Investment Lens"),
+        output_language="zh-TW",
     )
 
     assert "Final output must be in Taiwan-style Traditional Chinese." in prompt
@@ -57,3 +58,33 @@ def test_mode_prompt_contains_shared_language_requirement():
     assert "model: gpt-5.5" in prompt
     assert "reasoning_effort: high" in prompt
     assert "Transcript body" in prompt
+
+
+def test_mode_prompt_contains_english_output_instruction():
+    prompt = build_mode_report_prompt(
+        "Transcript body",
+        "https://youtu.be/dQw4w9WgXcQ",
+        analysis_mode="Quick Summary",
+        profile=get_default_profile("Quick Summary"),
+        output_language="en",
+    )
+
+    assert "Final output must be in clear professional English." in prompt
+    assert "Render all report section headings and body text in clear professional English." in prompt
+    assert "Use only the transcript content." in prompt
+    assert "Distinguish direct claims in the transcript from your interpretation." in prompt
+
+
+def test_mode_prompt_contains_japanese_output_instruction():
+    prompt = build_mode_report_prompt(
+        "Transcript body",
+        "https://youtu.be/dQw4w9WgXcQ",
+        analysis_mode="Bias Check",
+        profile=get_default_profile("Bias Check"),
+        output_language="ja",
+    )
+
+    assert "Final output must be in natural professional Japanese." in prompt
+    assert "Render all report section headings and body text in natural professional Japanese." in prompt
+    assert "Use only the transcript content." in prompt
+    assert "Distinguish direct claims in the transcript from your interpretation." in prompt

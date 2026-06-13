@@ -30,6 +30,8 @@ def test_save_archived_report_writes_markdown_and_metadata():
             transcript_provider="manual",
             transcript_cache_path="reports/transcripts/dQw4w9WgXcQ.json",
             transcript_created_at="2026-06-10T16:29:00",
+            output_language="en",
+            output_language_label="English",
             generated_at=datetime(2026, 6, 10, 16, 30),
             reports_dir=reports_dir,
             metadata_dir=metadata_dir,
@@ -53,7 +55,11 @@ def test_save_archived_report_writes_markdown_and_metadata():
         assert metadata["transcript_provider"] == "manual"
         assert metadata["transcript_cache_path"] == "reports/transcripts/dQw4w9WgXcQ.json"
         assert metadata["transcript_created_at"] == "2026-06-10T16:29:00"
+        assert metadata["output_language"] == "en"
+        assert metadata["output_language_label"] == "English"
         assert metadata["report_file_path"] == str(record.report_path)
+        assert record.output_language == "en"
+        assert record.output_language_label == "English"
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -109,6 +115,8 @@ def test_recent_reports_include_legacy_markdown_without_metadata():
         assert recent[0].metadata_path is None
         assert recent[0].report_type == "summary"
         assert recent[0].video_id == "dQw4w9WgXcQ"
+        assert recent[0].output_language == "zh-TW"
+        assert recent[0].output_language_label == "Traditional Chinese"
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
