@@ -57,6 +57,7 @@ fetch_transcript_result = transcript_provider.fetch_transcript_result
 format_debug_exception = transcript_provider.format_debug_exception
 transcribe_youtube_audio_result = transcript_provider.transcribe_youtube_audio_result
 transcript_cache = importlib.reload(_transcript_cache)
+read_transcript_cache = transcript_cache.read_transcript_cache
 read_youtube_transcript_cache = transcript_cache.read_youtube_transcript_cache
 write_transcript_cache = transcript_cache.write_transcript_cache
 cost_estimator = importlib.reload(_cost_estimator)
@@ -300,6 +301,215 @@ def render_context_pack_controls(
         )
 
 
+def safe_metadata_for_display(value):
+    if isinstance(value, dict):
+        return {
+            key: "[redacted]" if _looks_sensitive_key(key) else safe_metadata_for_display(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [safe_metadata_for_display(item) for item in value]
+    return value
+
+
+def _looks_sensitive_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    sensitive_terms = ("api_key", "secret", "password", "authorization", "bearer", "credential")
+    return any(term in normalized for term in sensitive_terms)
+
+
+def _display_value(value) -> str:
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return str(value)
+
+
+def _metadata_value(metadata: dict, *keys: str) -> str:
+    for key in keys:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def render_report_settings_summary(metadata: dict) -> None:
+    st.caption("Report settings")
+    summary_fields = [
+        ("Analysis mode", _metadata_value(metadata, "analysis_mode", "report_type")),
+        ("Report output language", _metadata_value(metadata, "output_language_label", "output_language")),
+        ("Selected model", _metadata_value(metadata, "selected_model")),
+        ("Reasoning effort", _metadata_value(metadata, "reasoning_effort")),
+        ("Transcript source", display_transcript_source(_metadata_value(metadata, "transcript_source"))),
+        ("Transcript language", _metadata_value(metadata, "transcript_language")),
+        ("Generated", _metadata_value(metadata, "generated_at")),
+    ]
+    cols = st.columns(2)
+    for index, (label, value) in enumerate(summary_fields):
+        cols[index % 2].write(f"**{label}:** `{_display_value(value)}`")
+
+
+def render_report_tab(*, report_text: str, report_path: Path | None, metadata: dict, key_prefix: str) -> None:
+    st.markdown(report_text or "_No report content is available._")
+    if report_path:
+        st.caption(f"Report path: {report_path}")
+        if report_text:
+            st.download_button(
+                "Download Report Markdown",
+                data=report_text,
+                file_name=report_path.name,
+                mime="text/markdown",
+                key=f"{key_prefix}-download-report",
+            )
+    render_report_settings_summary(metadata)
+
+
+def render_metadata_tab(metadata: dict) -> None:
+    if not metadata:
+        st.info("Metadata is not available for this archived report.")
+        return
+
+    important_fields = {
+        "source_url": metadata.get("source_url"),
+        "video_id": metadata.get("video_id"),
+        "video_title": metadata.get("video_title"),
+        "transcript_source": metadata.get("transcript_source"),
+        "transcript_provider": metadata.get("transcript_provider"),
+        "transcript_language": metadata.get("transcript_language"),
+        "transcript_cache_path": metadata.get("transcript_cache_path"),
+        "analysis_mode": metadata.get("analysis_mode"),
+        "report_output_language": metadata.get("output_language_label") or metadata.get("output_language"),
+        "selected_model": metadata.get("selected_model"),
+        "reasoning_effort": metadata.get("reasoning_effort"),
+        "model_override": metadata.get("model_override"),
+        "usage": metadata.get("usage"),
+        "report_path": metadata.get("report_file_path"),
+        "context_pack_path": metadata.get("context_pack_path"),
+    }
+    st.json(safe_metadata_for_display({key: value for key, value in important_fields.items() if value not in (None, "")}))
+    with st.expander("All metadata"):
+        st.json(safe_metadata_for_display(metadata))
+
+
+def render_context_pack_tab(
+    *,
+    report_text: str,
+    report_path: Path | None,
+    metadata_path: Path | None,
+    metadata: dict,
+    transcript_excerpt: str,
+    key_prefix: str,
+) -> None:
+    if not report_text or not report_path or not metadata_path:
+        st.info("Context Pack controls are not available for this report.")
+        return
+    render_context_pack_controls(
+        report_text=report_text,
+        report_path=report_path,
+        metadata_path=metadata_path,
+        metadata=metadata,
+        transcript_excerpt=transcript_excerpt,
+        key_prefix=key_prefix,
+    )
+
+
+def _prepared_matches_metadata(prepared: dict, metadata: dict) -> bool:
+    if not prepared:
+        return False
+    prepared_cache_path = str(prepared.get("cache_path") or "")
+    metadata_cache_path = str(metadata.get("transcript_cache_path") or "")
+    if prepared_cache_path and metadata_cache_path and prepared_cache_path == metadata_cache_path:
+        return True
+    return False
+
+
+def _load_transcript_preview_text(metadata: dict, transcript_excerpt: str = "") -> tuple[str, str]:
+    if transcript_excerpt:
+        return transcript_excerpt, "current session"
+
+    prepared = st.session_state.get("prepared_transcript") or {}
+    if prepared.get("text") and _prepared_matches_metadata(prepared, metadata):
+        return str(prepared.get("text") or ""), "current session"
+
+    cache_path = metadata.get("transcript_cache_path")
+    if cache_path:
+        try:
+            cached = read_transcript_cache(Path(cache_path))
+        except OSError:
+            cached = None
+        if cached and cached.transcript_text:
+            return cached.transcript_text, "local cache"
+    return "", ""
+
+
+def render_transcript_preview_tab(*, metadata: dict, transcript_excerpt: str = "") -> None:
+    source = _metadata_value(metadata, "transcript_source")
+    provider = _metadata_value(metadata, "transcript_provider")
+    language = _metadata_value(metadata, "transcript_language")
+    cache_path = _metadata_value(metadata, "transcript_cache_path")
+    transcript_text, preview_source = _load_transcript_preview_text(metadata, transcript_excerpt)
+
+    col1, col2, col3 = st.columns(3)
+    col1.write(f"**Source:** `{_display_value(display_transcript_source(source))}`")
+    col2.write(f"**Provider:** `{_display_value(provider)}`")
+    col3.write(f"**Language:** `{_display_value(language)}`")
+    st.write(f"**Characters:** `{len(transcript_text):,}`")
+    if cache_path:
+        st.caption(f"Transcript cache path: {cache_path}")
+
+    if not transcript_text:
+        st.info("Transcript preview is not available for this archived report.")
+        return
+
+    preview_limit = 4000
+    st.text_area(
+        "Transcript preview",
+        value=transcript_text[:preview_limit],
+        height=260,
+        disabled=True,
+    )
+    caption = f"Showing first {min(len(transcript_text), preview_limit):,} characters of {len(transcript_text):,}."
+    if preview_source:
+        caption += f" Loaded from {preview_source}."
+    st.caption(caption)
+
+
+def render_report_result_tabs(
+    *,
+    report_text: str,
+    report_path: Path | None,
+    metadata_path: Path | None,
+    metadata: dict | None,
+    transcript_excerpt: str = "",
+    key_prefix: str,
+) -> None:
+    metadata = metadata or {}
+    report_tab, metadata_tab, context_pack_tab, transcript_tab = st.tabs(
+        ["Report", "Metadata", "Context Pack", "Transcript Preview"]
+    )
+    with report_tab:
+        render_report_tab(
+            report_text=report_text,
+            report_path=report_path,
+            metadata=metadata,
+            key_prefix=key_prefix,
+        )
+    with metadata_tab:
+        render_metadata_tab(metadata)
+    with context_pack_tab:
+        render_context_pack_tab(
+            report_text=report_text,
+            report_path=report_path,
+            metadata_path=metadata_path,
+            metadata=metadata,
+            transcript_excerpt=transcript_excerpt,
+            key_prefix=key_prefix,
+        )
+    with transcript_tab:
+        render_transcript_preview_tab(metadata=metadata, transcript_excerpt=transcript_excerpt)
+
+
 configure_logging()
 st.set_page_config(page_title="Info Catalyst", layout="wide")
 
@@ -340,16 +550,13 @@ if selected_report_path:
         selected_metadata = read_metadata(selected_record.metadata_path if selected_record else None)
         selected_report = read_report(selected_path)
         st.subheader("Archived Report")
-        st.caption(str(selected_path))
-        st.markdown(selected_report)
-        if selected_record and selected_record.metadata_path:
-            render_context_pack_controls(
-                report_text=selected_report,
-                report_path=selected_path,
-                metadata_path=selected_record.metadata_path,
-                metadata=selected_metadata,
-                key_prefix=f"report-{selected_path.stem}",
-            )
+        render_report_result_tabs(
+            report_text=selected_report,
+            report_path=selected_path,
+            metadata_path=selected_record.metadata_path if selected_record else None,
+            metadata=selected_metadata,
+            key_prefix=f"report-{selected_path.stem}",
+        )
         st.divider()
     except Exception as exc:
         logging.exception("Failed to open archived report: %s", selected_report_path)
@@ -746,21 +953,18 @@ if generate:
                 output_language_label=selected_output_language.label,
             )
 
-        st.subheader(f"{analysis_mode} Report")
-        st.markdown(report)
-        st.caption(f"Saved to {report_path}")
         st.session_state.selected_report_path = str(report_path)
         saved_record = find_report_record_by_path(report_path)
         saved_metadata = read_metadata(saved_record.metadata_path if saved_record else None)
-        if saved_record and saved_record.metadata_path:
-            render_context_pack_controls(
-                report_text=report,
-                report_path=report_path,
-                metadata_path=saved_record.metadata_path,
-                metadata=saved_metadata,
-                transcript_excerpt=final_transcript,
-                key_prefix=f"report-{report_path.stem}",
-            )
+        st.subheader(f"{analysis_mode} Report")
+        render_report_result_tabs(
+            report_text=report,
+            report_path=report_path,
+            metadata_path=saved_record.metadata_path if saved_record else None,
+            metadata=saved_metadata,
+            transcript_excerpt=final_transcript,
+            key_prefix=f"report-{report_path.stem}",
+        )
     except OpenAIRequestError as exc:
         logging.exception("Report generation failed")
         st.error(str(exc))
