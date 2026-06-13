@@ -80,6 +80,18 @@ Audio transcription fallback 是 opt-in。它可能下載音訊並呼叫 OpenAI 
 
 輸出報告維持台灣慣用繁體中文。可使用預設 model profile，也可以勾選 `Override model settings` 覆寫 model 與 reasoning effort。
 
+## 報告輸出語言
+
+`Report Output Language` 可以控制最終 Markdown 報告使用的語言，預設為 `Traditional Chinese`。目前支援：
+
+- `Traditional Chinese`
+- `English`
+- `Japanese`
+
+這個設定只影響報告輸出語言，不會改變逐字稿來源語言，也不會重新抓取或翻譯逐字稿。逐字稿來源語言代表 YouTube、cache、手動貼上或音訊 fallback 取得的原始內容語言；報告輸出語言代表模型產生分析報告、報告標題、Context Pack 外部 AI 指令與建議追問時使用的語言。
+
+例如，英文逐字稿可以輸出繁體中文報告；中文逐字稿也可以直接產生英文或日文報告。系統會要求模型直接用選定語言生成報告，不會使用第二次 API 呼叫做翻譯。
+
 ## Reports And Metadata
 
 Markdown 報告：
@@ -107,6 +119,8 @@ metadata 會記錄 video ID、source URL、analysis mode、model profile、usage
 - `transcript_cache_path`
 - `transcript_language`
 - `transcript_created_at`
+- `output_language`
+- `output_language_label`
 
 舊 metadata 仍可相容讀取。
 

@@ -37,6 +37,8 @@ def save_report_with_metadata(
     transcript_provider: str = "",
     transcript_cache_path: str = "",
     transcript_created_at: str = "",
+    output_language: str = "",
+    output_language_label: str = "",
 ) -> Path:
     record = report_archive.save_archived_report(
         report_type,
@@ -55,6 +57,8 @@ def save_report_with_metadata(
         transcript_provider=transcript_provider,
         transcript_cache_path=transcript_cache_path,
         transcript_created_at=transcript_created_at,
+        output_language=output_language,
+        output_language_label=output_language_label,
     )
     return record.report_path
 

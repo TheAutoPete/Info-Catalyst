@@ -2,12 +2,11 @@ import importlib
 
 from services import prompt_loader as _prompt_loader
 from services.model_profiles import ModelProfile, get_analysis_mode
+from services.output_languages import get_output_language
 
 
 prompt_loader = importlib.reload(_prompt_loader)
 
-
-BASE_LANGUAGE_REQUIREMENT = "Final output must be in Taiwan-style Traditional Chinese."
 
 MODE_INSTRUCTIONS = {
     "Quick Summary": """# Quick Summary Report
@@ -100,8 +99,10 @@ def build_mode_report_prompt(
     *,
     analysis_mode: str,
     profile: ModelProfile,
+    output_language: str | None = None,
 ) -> str:
     mode = get_analysis_mode(analysis_mode)
+    language = get_output_language(output_language)
     return prompt_loader.format_prompt(
         prompt_loader.load_prompt("mode_report_prompt.md"),
         transcript=transcript,
@@ -110,6 +111,7 @@ def build_mode_report_prompt(
         mode_purpose=mode.purpose,
         model=profile.model,
         reasoning_effort=profile.reasoning_effort,
+        output_language_instruction=language.prompt_instruction.replace("\n", "\n- "),
         mode_instructions=MODE_INSTRUCTIONS[mode.name],
     )
 
@@ -121,6 +123,7 @@ def add_report_header(
     model: str,
     reasoning_effort: str,
     override: bool,
+    output_language_label: str = "",
 ) -> str:
     selection = "manual override" if override else "auto-selected"
     header = "\n".join(
@@ -128,6 +131,7 @@ def add_report_header(
             "## Report Settings",
             "",
             f"- Analysis Mode: {analysis_mode}",
+            f"- Report Output Language: {output_language_label or get_output_language().label}",
             f"- Model: {model}",
             f"- Reasoning Effort: {reasoning_effort}",
             f"- Model Selection: {selection}",
