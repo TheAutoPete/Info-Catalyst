@@ -78,6 +78,7 @@ def configure_logging() -> None:
 
 def show_debug_exception(exc: Exception) -> None:
     if show_debug_info:
+        st.code(f"{type(exc).__name__}: {exc}")
         st.code("".join(traceback.format_exception(exc)))
 
 
@@ -318,7 +319,9 @@ if "last_youtube_fetch_at" not in st.session_state:
     st.session_state.last_youtube_fetch_at = {}
 
 with st.sidebar:
-    show_debug_info = st.checkbox("Show debug info", value=False)
+    with st.expander("Debug options"):
+        show_debug_info = st.checkbox("Show debug info", value=False)
+        st.caption("Shows transcript diagnostics and exception tracebacks when errors occur.")
     st.subheader("Recent Reports")
     recent_reports = list_recent_reports(limit=20)
     if recent_reports:
@@ -399,7 +402,7 @@ if prepared:
     transcript = prepared.get("text", "")
     transcript_language = prepared.get("language", "")
 
-col_a, col_b, col_c = st.columns(3)
+col_a, col_b = st.columns(2)
 with col_a:
     if st.button(
         "Load cached transcript",
@@ -436,7 +439,9 @@ with col_b:
                 st.session_state.transcript_debug_messages = list(getattr(exc, "debug_messages", ()))
                 st.warning(transcript_error)
                 show_debug_exception(exc)
-with col_c:
+
+with st.expander("Advanced transcript controls"):
+    st.caption("Use refresh only when you need to replace the prepared or cached transcript. Cooldown still applies.")
     if st.button(
         "Refresh transcript from YouTube",
         key=f"refresh-youtube-{video_id or 'pending'}",
@@ -477,15 +482,18 @@ if available:
         )
     )
 
-debug_messages = st.session_state.get("transcript_debug_messages", [])
-if youtube_url and debug_messages and show_debug_info:
-    with st.expander("Advanced / debug: transcript details"):
+if youtube_url and show_debug_info:
+    debug_messages = st.session_state.get("transcript_debug_messages", [])
+    with st.expander("Debug options"):
         st.code(f"parsed video ID: {video_id}")
         prepared = st.session_state.get("prepared_transcript") or {}
         st.code(f"transcript source: {prepared.get('source', '')}")
         st.code(f"cache path: {prepared.get('cache_path', '')}")
-        for message in debug_messages:
-            st.code(message)
+        if debug_messages:
+            for message in debug_messages:
+                st.code(message)
+        else:
+            st.caption("No transcript debug messages captured for the current source.")
 
 generate_duplicate_report = True
 if video_id and duplicate_reports:
@@ -505,9 +513,9 @@ if video_id and duplicate_reports:
 show_other_options = not bool(transcript)
 with st.expander("Other transcript options", expanded=show_other_options):
     if transcript:
-        st.caption("Manual paste and audio transcription are available here if you need to replace the prepared transcript.")
+        st.caption("Paste a transcript here if you need to replace the prepared transcript.")
     else:
-        st.caption("Use these only when the cached or YouTube transcript is unavailable.")
+        st.caption("Use this when the cached or YouTube transcript is unavailable, or when you want to provide your own transcript.")
 
     manual_transcript = st.text_area(
         "Manual transcript fallback",
@@ -532,7 +540,7 @@ with st.expander("Other transcript options", expanded=show_other_options):
             st.success("Manual transcript saved to local cache.")
             st.rerun()
 
-    st.divider()
+with st.expander("Audio transcription fallback"):
     if not video_id:
         st.caption("Audio transcription fallback requires a valid YouTube URL.")
     else:
@@ -609,12 +617,20 @@ reasoning_effort = default_profile.reasoning_effort
 with st.expander("Advanced model settings"):
     override_model_settings = st.checkbox("Override model settings", value=False)
     if override_model_settings:
-        model = st.selectbox("model", MODEL_OPTIONS, index=MODEL_OPTIONS.index(default_profile.model))
+        model = st.selectbox("Model", MODEL_OPTIONS, index=MODEL_OPTIONS.index(default_profile.model))
         reasoning_effort = st.selectbox(
-            "reasoning_effort",
+            "Reasoning effort",
             REASONING_EFFORT_OPTIONS,
             index=REASONING_EFFORT_OPTIONS.index(default_profile.reasoning_effort),
         )
+        manual_profile = resolve_model_profile(
+            analysis_mode,
+            override=True,
+            model=model,
+            reasoning_effort=reasoning_effort,
+        )
+        if is_high_cost_profile(manual_profile):
+            st.warning("This manual model override may use more tokens and cost more.")
 
 selected_profile = resolve_model_profile(
     analysis_mode,
