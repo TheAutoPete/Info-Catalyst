@@ -182,6 +182,40 @@ def mark_youtube_fetch(video_id: str) -> None:
     st.session_state.last_youtube_fetch_at = last_by_video
 
 
+def display_transcript_source(source: str) -> str:
+    if source == "cached":
+        return "cache"
+    if source == "audio_transcription":
+        return "audio"
+    return source or "-"
+
+
+def render_transcript_status_card(*, prepared: dict | None, transcript_error: str | None, cached_record=None) -> None:
+    with st.container(border=True):
+        st.subheader("Transcript Status")
+        if prepared:
+            status = "Ready"
+        elif transcript_error:
+            status = "Failed"
+        else:
+            status = "Not ready"
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Status", status)
+        col2.metric("Source", display_transcript_source((prepared or {}).get("source", "")))
+        col3.metric("Characters", f"{len((prepared or {}).get('text', '')):,}")
+
+        st.write(f"Provider: `{(prepared or {}).get('provider') or '-'}`")
+        st.write(f"Language: `{(prepared or {}).get('language') or '-'}`")
+        cache_path = (prepared or {}).get("cache_path") or getattr(cached_record, "transcript_cache_path", "")
+        if cache_path:
+            st.caption(f"Cache path: {cache_path}")
+        if cached_record and not prepared:
+            st.info("Cached transcript available. Use Load cached transcript to prepare it.")
+        if transcript_error:
+            st.warning(transcript_error)
+
+
 def render_context_pack_controls(
     *,
     report_text: str,
@@ -319,60 +353,20 @@ if selected_report_path:
         st.error("Could not open that archived report.")
         show_debug_exception(exc)
 
-youtube_url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
-video_title = st.text_input("Video title (optional)", placeholder="Optional title")
-
-analysis_mode = st.selectbox(
-    "Analysis Mode",
-    MODE_NAMES,
-    index=MODE_NAMES.index(DEFAULT_ANALYSIS_MODE),
-)
-selected_mode = get_analysis_mode(analysis_mode)
-output_language_labels = get_output_language_labels()
-default_output_language = get_default_output_language()
-selected_output_language_label = st.selectbox(
-    "Report Output Language",
-    output_language_labels,
-    index=output_language_labels.index(default_output_language.label),
-)
-selected_output_language = get_output_language(selected_output_language_label)
-default_profile = get_default_profile(analysis_mode)
-override_model_settings = st.checkbox("Override model settings", value=False)
-
-if override_model_settings:
-    model = st.selectbox("model", MODEL_OPTIONS, index=MODEL_OPTIONS.index(default_profile.model))
-    reasoning_effort = st.selectbox(
-        "reasoning_effort",
-        REASONING_EFFORT_OPTIONS,
-        index=REASONING_EFFORT_OPTIONS.index(default_profile.reasoning_effort),
-    )
-else:
-    model = default_profile.model
-    reasoning_effort = default_profile.reasoning_effort
-
-selected_profile = resolve_model_profile(
-    analysis_mode,
-    override=override_model_settings,
-    model=model,
-    reasoning_effort=reasoning_effort,
-)
-st.caption(
-    f"Selected profile: {selected_profile.model} / reasoning_effort={selected_profile.reasoning_effort} "
-    f"({selected_profile.use_case}) | Output language: {selected_output_language.label}"
-)
-if is_high_cost_profile(selected_profile):
-    st.warning("This mode may use more tokens and cost more.")
-
 transcript = ""
 video_id = None
 transcript_error = None
 transcript_language = ""
 duplicate_reports = []
+cached_record = None
+
+st.header("Step 1: Prepare Source")
+youtube_url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
+video_title = st.text_input("Video title (optional)", placeholder="Optional title")
 
 if youtube_url:
     try:
         video_id = extract_video_id(youtube_url)
-        st.caption(f"Parsed YouTube video ID: `{video_id}`")
         duplicate_reports = find_reports_by_video_id(video_id)
         if st.session_state.prepared_video_id != video_id:
             st.session_state.prepared_transcript = None
@@ -383,65 +377,6 @@ if youtube_url:
         if cached_record and not st.session_state.prepared_transcript:
             set_prepared_transcript(video_id, prepared_from_cache(cached_record))
             st.success("Loaded transcript from local cache.")
-
-        st.subheader("Transcript Status")
-        prepared = st.session_state.prepared_transcript
-        if prepared:
-            st.success(f"Transcript loaded in current session: {prepared.get('source')} / {prepared.get('provider')}")
-            if prepared.get("cache_path"):
-                st.caption(f"Transcript cache path: {prepared['cache_path']}")
-        elif cached_record:
-            st.info("Cached transcript available.")
-        else:
-            st.info("No cached transcript.")
-
-        col_a, col_b = st.columns([1, 1])
-        with col_a:
-            if cached_record and st.button("Load cached transcript", key=f"load-cache-{video_id}"):
-                set_prepared_transcript(video_id, prepared_from_cache(cached_record))
-                st.rerun()
-        with col_b:
-            fetch_label = "Refresh transcript from YouTube" if cached_record or prepared else "Fetch transcript from YouTube"
-            if st.button(fetch_label, key=f"fetch-youtube-{video_id}"):
-                refresh_ok, remaining = can_refresh_youtube(video_id)
-                if not refresh_ok:
-                    st.warning(f"Please wait {remaining} seconds before refreshing this transcript from YouTube again.")
-                else:
-                    mark_youtube_fetch(video_id)
-                    try:
-                        with st.spinner("Fetching transcript from YouTube..."):
-                            transcript_result = fetch_transcript_result(video_id)
-                        set_prepared_transcript(
-                            video_id,
-                            prepared_from_result(transcript_result, source_url=youtube_url, source_type="youtube"),
-                        )
-                        st.success("Transcript fetched from YouTube and saved to local cache.")
-                        st.rerun()
-                    except TranscriptError as exc:
-                        logging.exception("YouTube transcript fetch failed")
-                        transcript_error = str(exc)
-                        st.session_state.transcript_debug_messages = list(getattr(exc, "debug_messages", ()))
-                        st.warning(transcript_error)
-                        show_debug_exception(exc)
-
-        if transcript_error:
-            st.info(
-                "You can try again later, load a cached transcript, paste the transcript manually, "
-                "or use audio transcription fallback if appropriate."
-            )
-
-        if prepared:
-            transcript = prepared.get("text", "")
-            transcript_language = prepared.get("language", "")
-            available = prepared.get("available_transcripts") or []
-            if available:
-                st.caption(
-                    "Available transcript languages: "
-                    + ", ".join(
-                        f"{item.get('language_code', '')} - {item.get('language', '')}".strip(" -")
-                        for item in available
-                    )
-                )
     except YouTubeUrlError as exc:
         logging.exception("Video URL parsing failed")
         transcript_error = str(exc)
@@ -454,9 +389,97 @@ if youtube_url:
         st.error(transcript_error)
         show_debug_exception(exc)
 
+if video_id:
+    st.caption(f"Parsed video ID: `{video_id}`")
+else:
+    st.caption("Parsed video ID: -")
+
+prepared = st.session_state.get("prepared_transcript") or {}
+if prepared:
+    transcript = prepared.get("text", "")
+    transcript_language = prepared.get("language", "")
+
+col_a, col_b, col_c = st.columns(3)
+with col_a:
+    if st.button(
+        "Load cached transcript",
+        key=f"load-cache-{video_id or 'pending'}",
+        disabled=not bool(video_id and cached_record),
+        use_container_width=True,
+    ):
+        set_prepared_transcript(video_id, prepared_from_cache(cached_record))
+        st.rerun()
+with col_b:
+    if st.button(
+        "Fetch transcript from YouTube",
+        key=f"fetch-youtube-{video_id or 'pending'}",
+        disabled=not bool(video_id),
+        use_container_width=True,
+    ):
+        refresh_ok, remaining = can_refresh_youtube(video_id)
+        if not refresh_ok:
+            st.warning(f"Please wait {remaining} seconds before fetching this transcript from YouTube again.")
+        else:
+            mark_youtube_fetch(video_id)
+            try:
+                with st.spinner("Fetching transcript from YouTube..."):
+                    transcript_result = fetch_transcript_result(video_id)
+                set_prepared_transcript(
+                    video_id,
+                    prepared_from_result(transcript_result, source_url=youtube_url, source_type="youtube"),
+                )
+                st.success("Transcript fetched from YouTube and saved to local cache.")
+                st.rerun()
+            except TranscriptError as exc:
+                logging.exception("YouTube transcript fetch failed")
+                transcript_error = str(exc)
+                st.session_state.transcript_debug_messages = list(getattr(exc, "debug_messages", ()))
+                st.warning(transcript_error)
+                show_debug_exception(exc)
+with col_c:
+    if st.button(
+        "Refresh transcript from YouTube",
+        key=f"refresh-youtube-{video_id or 'pending'}",
+        disabled=not bool(video_id),
+        use_container_width=True,
+    ):
+        refresh_ok, remaining = can_refresh_youtube(video_id)
+        if not refresh_ok:
+            st.warning(f"Please wait {remaining} seconds before refreshing this transcript from YouTube again.")
+        else:
+            mark_youtube_fetch(video_id)
+            try:
+                with st.spinner("Refreshing transcript from YouTube..."):
+                    transcript_result = fetch_transcript_result(video_id)
+                set_prepared_transcript(
+                    video_id,
+                    prepared_from_result(transcript_result, source_url=youtube_url, source_type="youtube"),
+                )
+                st.success("Transcript refreshed from YouTube and saved to local cache.")
+                st.rerun()
+            except TranscriptError as exc:
+                logging.exception("YouTube transcript refresh failed")
+                transcript_error = str(exc)
+                st.session_state.transcript_debug_messages = list(getattr(exc, "debug_messages", ()))
+                st.warning(transcript_error)
+                show_debug_exception(exc)
+
+prepared = st.session_state.get("prepared_transcript") or {}
+render_transcript_status_card(prepared=prepared, transcript_error=transcript_error, cached_record=cached_record)
+
+available = prepared.get("available_transcripts") or []
+if available:
+    st.caption(
+        "Available transcript languages: "
+        + ", ".join(
+            f"{item.get('language_code', '')} - {item.get('language', '')}".strip(" -")
+            for item in available
+        )
+    )
+
 debug_messages = st.session_state.get("transcript_debug_messages", [])
 if youtube_url and debug_messages and show_debug_info:
-    with st.expander("Transcript debug info"):
+    with st.expander("Advanced / debug: transcript details"):
         st.code(f"parsed video ID: {video_id}")
         prepared = st.session_state.get("prepared_transcript") or {}
         st.code(f"transcript source: {prepared.get('source', '')}")
@@ -479,31 +502,40 @@ if video_id and duplicate_reports:
             open_report(latest_duplicate.report_path)
             st.rerun()
 
-manual_transcript = st.text_area(
-    "Manual transcript fallback",
-    value="",
-    height=220,
-    placeholder="Paste the transcript here if automatic extraction fails.",
-)
-manual_language = st.selectbox(
-    "Manual transcript language",
-    ["zh-TW", "zh-Hant", "zh-Hans", "en", "manual"],
-    index=0,
-)
-if manual_transcript.strip():
-    if st.button("Save manual transcript to cache", key=f"save-manual-{video_id or 'manual'}"):
-        prepared = prepared_from_manual(
-            text=manual_transcript.strip(),
-            video_id=video_id or "",
-            source_url=youtube_url,
-            language=manual_language,
-        )
-        set_prepared_transcript(video_id or "manual-transcript", prepared)
-        st.success("Manual transcript saved to local cache.")
-        st.rerun()
+show_other_options = not bool(transcript)
+with st.expander("Other transcript options", expanded=show_other_options):
+    if transcript:
+        st.caption("Manual paste and audio transcription are available here if you need to replace the prepared transcript.")
+    else:
+        st.caption("Use these only when the cached or YouTube transcript is unavailable.")
 
-if video_id and not transcript:
-    with st.expander("Use audio transcription fallback"):
+    manual_transcript = st.text_area(
+        "Manual transcript fallback",
+        value="",
+        height=220,
+        placeholder="Paste the transcript here if automatic extraction fails.",
+    )
+    manual_language = st.selectbox(
+        "Manual transcript language",
+        ["zh-TW", "zh-Hant", "zh-Hans", "en", "manual"],
+        index=0,
+    )
+    if manual_transcript.strip():
+        if st.button("Save manual transcript to cache", key=f"save-manual-{video_id or 'manual'}"):
+            prepared = prepared_from_manual(
+                text=manual_transcript.strip(),
+                video_id=video_id or "",
+                source_url=youtube_url,
+                language=manual_language,
+            )
+            set_prepared_transcript(video_id or "manual-transcript", prepared)
+            st.success("Manual transcript saved to local cache.")
+            st.rerun()
+
+    st.divider()
+    if not video_id:
+        st.caption("Audio transcription fallback requires a valid YouTube URL.")
+    else:
         st.warning(
             "Audio transcription may take longer than YouTube transcript extraction and may use additional OpenAI API cost. "
             "Use it only when YouTube transcript extraction is blocked or unavailable and you have the right to process the audio."
@@ -552,7 +584,53 @@ if final_transcript:
     if len(final_transcript) > 4000:
         st.caption(f"Showing first 4,000 characters of {len(final_transcript):,}.")
 elif youtube_url and transcript_error:
-    st.info("Paste a transcript above to continue.")
+    st.info("Paste a transcript in Other transcript options to continue.")
+
+st.header("Step 2: Configure Report")
+analysis_mode = st.selectbox(
+    "Analysis Mode",
+    MODE_NAMES,
+    index=MODE_NAMES.index(DEFAULT_ANALYSIS_MODE),
+)
+selected_mode = get_analysis_mode(analysis_mode)
+output_language_labels = get_output_language_labels()
+default_output_language = get_default_output_language()
+selected_output_language_label = st.selectbox(
+    "Report Output Language",
+    output_language_labels,
+    index=output_language_labels.index(default_output_language.label),
+)
+selected_output_language = get_output_language(selected_output_language_label)
+default_profile = get_default_profile(analysis_mode)
+
+override_model_settings = False
+model = default_profile.model
+reasoning_effort = default_profile.reasoning_effort
+with st.expander("Advanced model settings"):
+    override_model_settings = st.checkbox("Override model settings", value=False)
+    if override_model_settings:
+        model = st.selectbox("model", MODEL_OPTIONS, index=MODEL_OPTIONS.index(default_profile.model))
+        reasoning_effort = st.selectbox(
+            "reasoning_effort",
+            REASONING_EFFORT_OPTIONS,
+            index=REASONING_EFFORT_OPTIONS.index(default_profile.reasoning_effort),
+        )
+
+selected_profile = resolve_model_profile(
+    analysis_mode,
+    override=override_model_settings,
+    model=model,
+    reasoning_effort=reasoning_effort,
+)
+with st.container(border=True):
+    st.subheader("Selected Model Profile")
+    st.write(
+        f"`{selected_profile.model}` / reasoning_effort=`{selected_profile.reasoning_effort}` "
+        f"({selected_profile.use_case})"
+    )
+    st.caption(f"Output language: {selected_output_language.label}")
+if is_high_cost_profile(selected_profile):
+    st.warning("This mode may use more tokens and cost more.")
 
 cost_confirmation_ok = True
 if final_transcript:
@@ -583,9 +661,14 @@ if final_transcript:
                 value=False,
                 key="cost-confirmation",
             )
+else:
+    with st.container(border=True):
+        st.subheader("Cost & Token Estimate")
+        st.caption("Prepare a transcript first to see the estimate.")
 
+st.header("Step 3: Generate & Export")
 generate = st.button(
-    "Generate Reports",
+    "Generate Report",
     type="primary",
     disabled=(
         not final_transcript
