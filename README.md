@@ -48,8 +48,9 @@ Step 1 現在支援 `Source Type` 選擇器，目前可選：
 
 - `YouTube URL`
 - `Manual Text / Article Paste`
+- `Article URL`
 
-`Manual Text / Article Paste` 可用來分析貼上的文章、逐字稿、筆記或複製內容，不需要 YouTube URL。Article URL 自動擷取與 Podcast / Audio URL 支援會留到後續 issue。
+`Manual Text / Article Paste` 可用來分析貼上的文章、逐字稿、筆記或複製內容，不需要 YouTube URL。`Article URL` 會嘗試從公開網頁擷取可讀文章標題與內文，這是 best-effort 功能，不會呼叫 OpenAI。部分網站可能因 paywall、反爬蟲、JavaScript rendering 或 HTML 結構不佳而擷取失敗；如果失敗，請改用 `Manual Text / Article Paste` 貼上或編輯文章內容。Podcast / Audio URL 支援會留到後續 issue。
 
 YouTube 可能會對過度頻繁的自動字幕請求做流量限制，常見錯誤是 `RequestBlocked` 或 `IpBlocked`。Info Catalyst 現在採用 cache-first 與明確按鈕觸發：
 

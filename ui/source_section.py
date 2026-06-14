@@ -4,6 +4,11 @@ from datetime import datetime
 
 import streamlit as st
 
+from services.article_extractor import (
+    ArticleExtractionError,
+    extract_article_from_url,
+    stable_article_source_id,
+)
 from services import transcript_provider
 from services.report_archive import find_reports_by_video_id
 from services.transcript_cache import read_youtube_transcript_cache, write_transcript_cache
@@ -20,6 +25,7 @@ from ui.components import render_transcript_status_card
 
 SOURCE_TYPE_YOUTUBE_LABEL = "YouTube URL"
 SOURCE_TYPE_MANUAL_TEXT_LABEL = "Manual Text / Article Paste"
+SOURCE_TYPE_ARTICLE_URL_LABEL = "Article URL"
 MANUAL_SOURCE_LANGUAGES = ["zh-TW", "zh-Hant", "zh-Hans", "en", "ja", "unknown"]
 
 
@@ -51,6 +57,30 @@ def prepared_from_manual_text(
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "available_transcripts": [],
         "debug_messages": [],
+    }
+
+
+def prepared_from_article_url(
+    *,
+    text: str,
+    source_title: str,
+    source_url: str,
+    source_id: str,
+    debug_messages: list[str] | None = None,
+) -> dict:
+    return {
+        "text": text,
+        "source": "article_url",
+        "provider": "article_extractor",
+        "language": "unknown",
+        "source_type": "article_url",
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_id": source_id,
+        "cache_path": "",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "available_transcripts": [],
+        "debug_messages": list(debug_messages or []),
     }
 
 
@@ -422,6 +452,115 @@ def render_manual_text_source_controls() -> dict:
     }
 
 
+def _article_state() -> dict:
+    state = st.session_state.get("article_extraction_result")
+    if isinstance(state, dict):
+        return state
+    return {}
+
+
+def _set_article_state(state: dict) -> None:
+    st.session_state.article_extraction_result = state
+
+
+def render_article_url_source_controls(*, show_debug_exception) -> dict:
+    article_url = st.text_input("Article URL", placeholder="https://example.com/article")
+    optional_title = st.text_input("Source title (optional)", placeholder="Optional title before or after extraction")
+    current_state = _article_state()
+
+    if article_url and current_state.get("source_url") and current_state.get("source_url") != article_url:
+        current_state = {}
+        _set_article_state(current_state)
+        st.session_state.article_extracted_title = optional_title.strip()
+        st.session_state.article_extracted_text = ""
+
+    if st.button(
+        "Fetch article text",
+        disabled=not bool(article_url.strip()),
+        use_container_width=True,
+    ):
+        try:
+            with st.spinner("Fetching article text..."):
+                result = extract_article_from_url(article_url.strip())
+            current_state = {
+                "source_url": article_url.strip(),
+                "source_title": result.source_title,
+                "text": result.text,
+                "provider": result.provider,
+                "extracted_at": result.extracted_at,
+                "warnings": list(result.warnings),
+                "debug_messages": list(result.warnings),
+            }
+            _set_article_state(current_state)
+            st.session_state.article_extracted_title = optional_title.strip() or result.source_title
+            st.session_state.article_extracted_text = result.text
+            st.success("Article text extracted. Review and edit it before preparing the source.")
+            st.rerun()
+        except ArticleExtractionError as exc:
+            logging.exception("Article extraction failed")
+            st.session_state.transcript_debug_messages = [f"{type(exc).__name__}: {exc}"]
+            st.error(
+                "Could not extract readable article text from that URL. "
+                "Use Manual Text / Article Paste if the page is paywalled, blocked, or JavaScript-rendered."
+            )
+            show_debug_exception(exc)
+        except Exception as exc:
+            logging.exception("Unexpected article extraction failure")
+            st.session_state.transcript_debug_messages = [format_debug_exception(exc)]
+            st.error(
+                "Article extraction failed. Use Manual Text / Article Paste if this page cannot be fetched directly."
+            )
+            show_debug_exception(exc)
+
+    source_id = stable_article_source_id(article_url)
+    title_value = optional_title.strip() or current_state.get("source_title", "")
+    text_value = current_state.get("text", "")
+
+    if current_state:
+        st.caption(f"Extraction provider: `{current_state.get('provider') or 'article_extractor'}`")
+        st.caption(f"Extracted characters: {len(text_value):,}")
+        for warning in current_state.get("warnings", []):
+            st.warning(warning)
+
+    editable_title = st.text_input(
+        "Extracted source title",
+        value=title_value,
+        placeholder="Article title",
+        key="article_extracted_title",
+        disabled=not bool(current_state),
+    )
+    editable_text = st.text_area(
+        "Extracted article text",
+        value=text_value,
+        height=320,
+        placeholder="Fetched article text will appear here. You can edit it before preparing the source.",
+        key="article_extracted_text",
+        disabled=not bool(current_state),
+    )
+
+    if st.button(
+        "Prepare article source",
+        disabled=not bool(article_url.strip() and editable_title.strip() and editable_text.strip()),
+        use_container_width=True,
+    ):
+        prepared = prepared_from_article_url(
+            text=editable_text.strip(),
+            source_title=editable_title.strip(),
+            source_url=article_url.strip(),
+            source_id=source_id,
+            debug_messages=current_state.get("debug_messages", []),
+        )
+        set_prepared_transcript(source_id, prepared)
+        st.success("Article source prepared.")
+        st.rerun()
+
+    return {
+        "source_title": editable_title,
+        "source_url": article_url,
+        "source_id": source_id,
+    }
+
+
 def render_youtube_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
     transcript = ""
     video_id = None
@@ -565,18 +704,58 @@ def render_manual_text_source_section() -> dict:
     }
 
 
+def render_article_url_source_section(*, show_debug_exception) -> dict:
+    article_state = render_article_url_source_controls(show_debug_exception=show_debug_exception)
+    prepared = st.session_state.get("prepared_transcript") or {}
+    if prepared.get("source_type") != "article_url":
+        prepared = {}
+    final_transcript = prepared.get("text", "")
+    source_title = prepared.get("source_title") or article_state["source_title"]
+    source_url = prepared.get("source_url") or article_state["source_url"]
+    source_id = prepared.get("source_id") or article_state["source_id"]
+    transcript_language = prepared.get("language") or "unknown"
+
+    render_transcript_status_card(prepared=prepared, transcript_error=None, cached_record=None)
+    render_transcript_preview(
+        final_transcript=final_transcript,
+        source_url=source_url,
+        transcript_error=None,
+    )
+
+    return {
+        "youtube_url": "",
+        "video_title": "",
+        "video_id": "",
+        "source_type": "article_url",
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_id": source_id,
+        "transcript_language": transcript_language,
+        "duplicate_reports": [],
+        "generate_duplicate_report": True,
+        "final_transcript": final_transcript,
+    }
+
+
 def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
     st.header("Step 1: Prepare Source")
     selected_label = st.selectbox(
         "Source Type",
-        [SOURCE_TYPE_YOUTUBE_LABEL, SOURCE_TYPE_MANUAL_TEXT_LABEL],
+        [SOURCE_TYPE_YOUTUBE_LABEL, SOURCE_TYPE_MANUAL_TEXT_LABEL, SOURCE_TYPE_ARTICLE_URL_LABEL],
         key="source_type_selector",
     )
-    source_type = "manual_text" if selected_label == SOURCE_TYPE_MANUAL_TEXT_LABEL else "youtube"
+    source_type_by_label = {
+        SOURCE_TYPE_YOUTUBE_LABEL: "youtube",
+        SOURCE_TYPE_MANUAL_TEXT_LABEL: "manual_text",
+        SOURCE_TYPE_ARTICLE_URL_LABEL: "article_url",
+    }
+    source_type = source_type_by_label.get(selected_label, "youtube")
     reset_prepared_transcript_for_source_type(source_type)
 
     if source_type == "manual_text":
         return render_manual_text_source_section()
+    if source_type == "article_url":
+        return render_article_url_source_section(show_debug_exception=show_debug_exception)
 
     return render_youtube_source_section(
         show_debug=show_debug,
