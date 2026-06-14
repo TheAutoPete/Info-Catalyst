@@ -189,6 +189,8 @@ def _first_text(*values: Any) -> str:
 def _infer_source_type(*, source_url: str, video_id: str, transcript_source: str, report_type: str) -> str:
     source = transcript_source.casefold()
     url = source_url.casefold()
+    if source == "podcast_audio_url":
+        return "podcast_audio_url"
     if source == "audio_transcription":
         return "audio"
     if source == "article_url":

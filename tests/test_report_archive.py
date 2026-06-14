@@ -143,6 +143,47 @@ def test_save_archived_report_supports_manual_text_metadata():
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+def test_save_archived_report_supports_podcast_audio_url_metadata():
+    workspace = _workspace_tmp_dir()
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+
+    try:
+        record = save_archived_report(
+            "summary",
+            "# Podcast Audio Report\nBody",
+            video_id="",
+            source_url="https://cdn.example.com/podcast/episode.mp3",
+            video_title="",
+            source_type="podcast_audio_url",
+            source_id="audio-abcdef1234567890",
+            source_title="Podcast Audio Episode",
+            transcript_language="en",
+            transcript_source="podcast_audio_url",
+            transcript_provider="openai_transcription",
+            transcript_cache_path="reports/transcripts/audio-abcdef1234567890.json",
+            generated_at=datetime(2026, 6, 10, 16, 30),
+            reports_dir=reports_dir,
+            metadata_dir=metadata_dir,
+        )
+
+        metadata = json.loads(record.metadata_path.read_text(encoding="utf-8"))
+        assert metadata["source_type"] == "podcast_audio_url"
+        assert metadata["source_id"] == "audio-abcdef1234567890"
+        assert metadata["source_title"] == "Podcast Audio Episode"
+        assert metadata["source_url"] == "https://cdn.example.com/podcast/episode.mp3"
+        assert metadata["video_id"] == ""
+        assert metadata["video_title"] == ""
+        assert metadata["transcript_source"] == "podcast_audio_url"
+        assert metadata["transcript_provider"] == "openai_transcription"
+        assert metadata["transcript_language"] == "en"
+        assert metadata["transcript_cache_path"] == "reports/transcripts/audio-abcdef1234567890.json"
+        assert record.source_type == "podcast_audio_url"
+        assert record.source_id == "audio-abcdef1234567890"
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
 def test_recent_reports_include_legacy_markdown_without_metadata():
     workspace = _workspace_tmp_dir()
     reports_dir = workspace / "reports" / "markdown"

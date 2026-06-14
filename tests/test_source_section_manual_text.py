@@ -1,4 +1,11 @@
-from ui.source_section import prepared_from_article_url, prepared_from_manual_text, stable_manual_source_id
+from types import SimpleNamespace
+
+from ui.source_section import (
+    prepared_from_article_url,
+    prepared_from_audio_result,
+    prepared_from_manual_text,
+    stable_manual_source_id,
+)
 
 
 def test_manual_text_prepared_object_has_source_fields():
@@ -63,3 +70,31 @@ def test_article_url_prepared_object_has_expected_metadata_fields():
     assert prepared["cache_path"] == ""
     assert prepared["available_transcripts"] == []
     assert prepared["debug_messages"] == ["short extraction warning"]
+
+
+def test_audio_url_prepared_object_has_expected_metadata_fields():
+    result = SimpleNamespace(
+        source_id="audio-abcdef1234567890",
+        source_url="https://cdn.example.com/episode.mp3",
+        source_title="Podcast Episode",
+        transcript_text="audio transcript",
+        transcript_language="en",
+        transcript_provider="openai_transcription",
+        cache_path="reports/transcripts/audio-abcdef1234567890.json",
+        created_at="2026-06-14T12:00:00",
+        debug_messages=["Saved transcript cache"],
+    )
+
+    prepared = prepared_from_audio_result(result)
+
+    assert prepared["text"] == "audio transcript"
+    assert prepared["source"] == "podcast_audio_url"
+    assert prepared["provider"] == "openai_transcription"
+    assert prepared["language"] == "en"
+    assert prepared["source_type"] == "podcast_audio_url"
+    assert prepared["source_title"] == "Podcast Episode"
+    assert prepared["source_url"] == "https://cdn.example.com/episode.mp3"
+    assert prepared["source_id"] == "audio-abcdef1234567890"
+    assert prepared["cache_path"] == "reports/transcripts/audio-abcdef1234567890.json"
+    assert prepared["available_transcripts"] == []
+    assert prepared["debug_messages"] == ["Saved transcript cache"]

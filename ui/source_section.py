@@ -9,6 +9,13 @@ from services.article_extractor import (
     extract_article_from_url,
     stable_article_source_id,
 )
+from services.audio_source import (
+    AudioSourceError,
+    build_audio_source_id,
+    is_supported_audio_url,
+    load_cached_audio_transcript,
+    transcribe_audio_url,
+)
 from services import transcript_provider
 from services.report_archive import find_reports_by_video_id
 from services.transcript_cache import read_youtube_transcript_cache, write_transcript_cache
@@ -26,7 +33,9 @@ from ui.components import render_transcript_status_card
 SOURCE_TYPE_YOUTUBE_LABEL = "YouTube URL"
 SOURCE_TYPE_MANUAL_TEXT_LABEL = "Manual Text / Article Paste"
 SOURCE_TYPE_ARTICLE_URL_LABEL = "Article URL"
+SOURCE_TYPE_AUDIO_URL_LABEL = "Podcast / Audio URL"
 MANUAL_SOURCE_LANGUAGES = ["zh-TW", "zh-Hant", "zh-Hans", "en", "ja", "unknown"]
+AUDIO_SOURCE_LANGUAGES = ["zh", "en", "ja", "unknown"]
 
 
 def stable_manual_source_id(*, source_title: str, source_url: str, text: str) -> str:
@@ -84,6 +93,23 @@ def prepared_from_article_url(
     }
 
 
+def prepared_from_audio_result(result) -> dict:
+    return {
+        "text": result.transcript_text,
+        "source": "podcast_audio_url",
+        "provider": result.transcript_provider,
+        "language": result.transcript_language,
+        "source_type": "podcast_audio_url",
+        "source_title": result.source_title,
+        "source_url": result.source_url,
+        "source_id": result.source_id,
+        "cache_path": result.cache_path,
+        "created_at": result.created_at,
+        "available_transcripts": [],
+        "debug_messages": list(result.debug_messages),
+    }
+
+
 def prepared_from_cache(record) -> dict:
     return {
         "text": record.transcript_text,
@@ -99,6 +125,20 @@ def prepared_from_cache(record) -> dict:
         "available_transcripts": list(record.available_transcripts),
         "debug_messages": [f"Loaded transcript from local cache: {record.transcript_cache_path}"],
     }
+
+
+def prepared_audio_from_cache(record, *, source_title: str = "") -> dict:
+    prepared = prepared_from_cache(record)
+    prepared.update(
+        {
+            "source": "podcast_audio_url",
+            "provider": record.transcript_provider or "openai_transcription",
+            "source_type": "podcast_audio_url",
+            "source_title": source_title.strip(),
+            "available_transcripts": [],
+        }
+    )
+    return prepared
 
 
 def prepared_from_result(result, *, source_url: str, source_type: str = "youtube") -> dict:
@@ -561,6 +601,88 @@ def render_article_url_source_controls(*, show_debug_exception) -> dict:
     }
 
 
+def render_audio_url_source_controls(*, show_debug_exception) -> dict:
+    audio_url = st.text_input("Audio URL", placeholder="https://example.com/episode.mp3")
+    source_title = st.text_input("Source title (optional)", placeholder="Podcast episode or audio title")
+    language_hint = st.selectbox("Language hint", AUDIO_SOURCE_LANGUAGES, index=0)
+    source_id = build_audio_source_id(audio_url) if audio_url.strip() else ""
+    if source_id and st.session_state.get("prepared_source_type") == "podcast_audio_url":
+        if st.session_state.get("prepared_source_id") and st.session_state.prepared_source_id != source_id:
+            clear_prepared_transcript()
+    cached_record = load_cached_audio_transcript(source_id) if source_id else None
+    valid_url = is_supported_audio_url(audio_url)
+
+    if audio_url.strip() and not valid_url:
+        st.info(
+            "Use a direct audio file URL ending in MP3, M4A, WAV, AAC, WebM, OGG, or MP4. "
+            "Podcast pages, Spotify pages, and Apple Podcasts pages are not supported here; use Manual Text / Article Paste if you already have a transcript."
+        )
+
+    if cached_record:
+        st.success("Cached audio transcript found for this URL.")
+    else:
+        st.caption("Cached audio transcript: -")
+
+    if st.button(
+        "Load cached transcript",
+        disabled=not bool(cached_record),
+        key=f"load-audio-cache-{source_id or 'pending'}",
+        use_container_width=True,
+    ):
+        set_prepared_transcript(
+            source_id,
+            prepared_audio_from_cache(cached_record, source_title=source_title),
+        )
+        st.rerun()
+
+    st.warning(
+        "Audio transcription may take longer and may use additional OpenAI API cost. "
+        "Only process audio you have the right to process. A direct audio file URL is required."
+    )
+    st.caption(f"Transcription model: `{transcript_provider.OPENAI_TRANSCRIPTION_MODEL}`")
+    audio_confirm = st.checkbox(
+        "I understand audio transcription may take longer and use additional API cost.",
+        key=f"podcast-audio-confirm-{source_id or 'pending'}",
+    )
+
+    if st.button(
+        "Transcribe audio URL",
+        disabled=not bool(audio_confirm and valid_url),
+        key=f"transcribe-audio-url-{source_id or 'pending'}",
+        use_container_width=True,
+    ):
+        try:
+            with st.spinner("Downloading audio and transcribing..."):
+                result = transcribe_audio_url(
+                    audio_url.strip(),
+                    source_title=source_title.strip(),
+                    language_hint=language_hint,
+                )
+            set_prepared_transcript(result.source_id, prepared_from_audio_result(result))
+            st.success("Audio transcription completed and saved to local cache.")
+            st.rerun()
+        except AudioSourceError as exc:
+            logging.exception("Podcast/audio URL transcription failed")
+            st.session_state.transcript_debug_messages = [format_debug_exception(exc)]
+            st.error(
+                f"{exc} If you already have a transcript, use Manual Text / Article Paste."
+            )
+            show_debug_exception(exc)
+        except Exception as exc:
+            logging.exception("Unexpected podcast/audio URL transcription failure")
+            st.session_state.transcript_debug_messages = [format_debug_exception(exc)]
+            st.error("Audio transcription failed. Use Manual Text / Article Paste if you already have a transcript.")
+            show_debug_exception(exc)
+
+    return {
+        "source_title": source_title,
+        "source_url": audio_url,
+        "source_id": source_id,
+        "transcript_language": language_hint,
+        "cached_record": cached_record,
+    }
+
+
 def render_youtube_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
     transcript = ""
     video_id = None
@@ -737,17 +859,60 @@ def render_article_url_source_section(*, show_debug_exception) -> dict:
     }
 
 
+def render_audio_url_source_section(*, show_debug_exception) -> dict:
+    audio_state = render_audio_url_source_controls(show_debug_exception=show_debug_exception)
+    prepared = st.session_state.get("prepared_transcript") or {}
+    if prepared.get("source_type") != "podcast_audio_url":
+        prepared = {}
+    final_transcript = prepared.get("text", "")
+    source_title = prepared.get("source_title") or audio_state["source_title"]
+    source_url = prepared.get("source_url") or audio_state["source_url"]
+    source_id = prepared.get("source_id") or audio_state["source_id"]
+    transcript_language = prepared.get("language") or audio_state["transcript_language"]
+
+    render_transcript_status_card(
+        prepared=prepared,
+        transcript_error=None,
+        cached_record=audio_state.get("cached_record"),
+    )
+    render_transcript_preview(
+        final_transcript=final_transcript,
+        source_url=source_url,
+        transcript_error=None,
+    )
+
+    return {
+        "youtube_url": "",
+        "video_title": "",
+        "video_id": "",
+        "source_type": "podcast_audio_url",
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_id": source_id,
+        "transcript_language": transcript_language,
+        "duplicate_reports": [],
+        "generate_duplicate_report": True,
+        "final_transcript": final_transcript,
+    }
+
+
 def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
     st.header("Step 1: Prepare Source")
     selected_label = st.selectbox(
         "Source Type",
-        [SOURCE_TYPE_YOUTUBE_LABEL, SOURCE_TYPE_MANUAL_TEXT_LABEL, SOURCE_TYPE_ARTICLE_URL_LABEL],
+        [
+            SOURCE_TYPE_YOUTUBE_LABEL,
+            SOURCE_TYPE_MANUAL_TEXT_LABEL,
+            SOURCE_TYPE_ARTICLE_URL_LABEL,
+            SOURCE_TYPE_AUDIO_URL_LABEL,
+        ],
         key="source_type_selector",
     )
     source_type_by_label = {
         SOURCE_TYPE_YOUTUBE_LABEL: "youtube",
         SOURCE_TYPE_MANUAL_TEXT_LABEL: "manual_text",
         SOURCE_TYPE_ARTICLE_URL_LABEL: "article_url",
+        SOURCE_TYPE_AUDIO_URL_LABEL: "podcast_audio_url",
     }
     source_type = source_type_by_label.get(selected_label, "youtube")
     reset_prepared_transcript_for_source_type(source_type)
@@ -756,6 +921,8 @@ def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_e
         return render_manual_text_source_section()
     if source_type == "article_url":
         return render_article_url_source_section(show_debug_exception=show_debug_exception)
+    if source_type == "podcast_audio_url":
+        return render_audio_url_source_section(show_debug_exception=show_debug_exception)
 
     return render_youtube_source_section(
         show_debug=show_debug,

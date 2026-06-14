@@ -243,7 +243,7 @@ def _metadata_from_ytdlp_path(path: Path) -> TranscriptMetadata:
 
 def _fetch_transcript_result_from_audio(video_id: str, debug_messages: list[str]) -> TranscriptResult:
     audio_path = _download_audio_with_ytdlp(video_id, debug_messages)
-    text = _transcribe_audio_with_openai(audio_path, debug_messages).strip()
+    text = transcribe_audio_file(audio_path, language="zh", debug_messages=debug_messages).strip()
     if not text:
         raise RuntimeError("OpenAI audio transcription returned no readable text.")
 
@@ -300,18 +300,27 @@ def _download_audio_with_ytdlp(video_id: str, debug_messages: list[str]) -> Path
     raise RuntimeError("yt-dlp audio fallback did not write an audio file.")
 
 
-def _transcribe_audio_with_openai(audio_path: Path, debug_messages: list[str]) -> str:
+def transcribe_audio_file(audio_path: Path, *, language: str = "zh", debug_messages: list[str] | None = None) -> str:
+    messages = debug_messages if debug_messages is not None else []
+    return _transcribe_audio_with_openai(audio_path, messages, language=language)
+
+
+def _transcribe_audio_with_openai(audio_path: Path, debug_messages: list[str], *, language: str = "zh") -> str:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not set; audio fallback cannot transcribe the downloaded file.")
     debug_messages.append(f"Transcribing audio fallback with {OPENAI_TRANSCRIPTION_MODEL}.")
+    request_kwargs = {
+        "model": OPENAI_TRANSCRIPTION_MODEL,
+        "response_format": "text",
+    }
+    if language and language != "unknown":
+        request_kwargs["language"] = language
     with httpx.Client(trust_env=OPENAI_USE_SYSTEM_PROXY, timeout=600.0) as http_client:
         client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
         with audio_path.open("rb") as audio_file:
             return client.audio.transcriptions.create(
-                model=OPENAI_TRANSCRIPTION_MODEL,
                 file=audio_file,
-                response_format="text",
-                language="zh",
+                **request_kwargs,
             )
 
 
