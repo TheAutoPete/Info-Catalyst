@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ GENERIC_REPORT_TITLES = {
 WINDOWS_INVALID_FILENAME_CHARS = '<>:"/\\|?*'
 MAX_FILENAME_LENGTH = 180
 MAX_FILENAME_PART_LENGTH = 72
+TITLE_BACKFILL_FIELDS = ("report_title", "display_title", "title_source", "title_generated_at")
 
 
 def extract_report_title(markdown_text: str) -> str:
@@ -170,6 +172,112 @@ def resolve_display_title_from_metadata(
     return resolved["display_title"]
 
 
+def needs_title_backfill(metadata: dict[str, Any]) -> bool:
+    if not isinstance(metadata, dict):
+        return True
+    return any(not _has_text(metadata.get(field)) for field in TITLE_BACKFILL_FIELDS)
+
+
+def build_title_backfill_payload(
+    metadata: dict[str, Any],
+    markdown_text: str = "",
+    file_stem: str = "",
+) -> dict[str, str]:
+    metadata = metadata or {}
+    existing_report_title = _clean_title(str(metadata.get("report_title") or ""))
+    report_title = extract_report_title(markdown_text)
+    title_source = "report_h1" if report_title else ""
+
+    if not report_title and existing_report_title and not is_generic_report_title(existing_report_title):
+        report_title = existing_report_title
+        title_source = "existing_report_title"
+
+    if not report_title:
+        candidates: list[tuple[str, str]] = [
+            ("video_title", str(metadata.get("video_title") or "")),
+            ("source_title", str(metadata.get("source_title") or "")),
+            ("fallback", str(metadata.get("video_id") or "")),
+            ("fallback", _title_from_file_stem(file_stem)),
+        ]
+        for source, value in candidates:
+            candidate = _clean_title(value)
+            if candidate and not is_generic_report_title(candidate):
+                report_title = candidate
+                title_source = source
+                break
+
+    if not report_title:
+        report_title = "Untitled report"
+        title_source = "fallback"
+
+    generated_at = str(metadata.get("generated_at") or "")
+    payload = {
+        "report_title": report_title,
+        "display_title": build_display_title(
+            report_title=report_title,
+            generated_at=generated_at,
+            analysis_mode=str(metadata.get("analysis_mode") or metadata.get("report_type") or ""),
+        ),
+        "title_source": title_source,
+        "title_generated_at": _format_iso_timestamp(generated_at),
+    }
+
+    preserved: dict[str, str] = {}
+    for field in TITLE_BACKFILL_FIELDS:
+        current = str(metadata.get(field) or "").strip()
+        if not current:
+            continue
+        if field == "report_title" and is_generic_report_title(current):
+            continue
+        preserved[field] = current
+    return {**payload, **preserved}
+
+
+def preview_title_backfill(metadata_path: Path, report_path: Path) -> dict[str, Any]:
+    metadata = _read_json_metadata(metadata_path)
+    needed = needs_title_backfill(metadata)
+    markdown_text = _read_markdown_if_needed(report_path, needed)
+    payload = build_title_backfill_payload(metadata, markdown_text=markdown_text, file_stem=report_path.stem)
+    current_display_title = resolve_display_title_from_metadata(
+        metadata,
+        markdown_text=markdown_text,
+        file_stem=report_path.stem,
+    )
+    updates = {field: value for field, value in payload.items() if str(metadata.get(field) or "").strip() != value}
+    return {
+        "metadata_path": metadata_path,
+        "report_path": report_path,
+        "needs_backfill": needed,
+        "current_display_title": current_display_title,
+        "proposed": payload,
+        "updates": updates if needed else {},
+        "missing_report": not report_path.exists(),
+    }
+
+
+def backfill_title_metadata(metadata_path: Path, report_path: Path) -> dict[str, Any]:
+    preview = preview_title_backfill(metadata_path, report_path)
+    if not preview["needs_backfill"]:
+        return {**preview, "updated": False, "skipped": True}
+
+    metadata = _read_json_metadata(metadata_path)
+    if not metadata:
+        return {**preview, "updated": False, "skipped": True}
+
+    updated_metadata = dict(metadata)
+    for field in TITLE_BACKFILL_FIELDS:
+        proposed = str(preview["proposed"].get(field) or "").strip()
+        current = str(updated_metadata.get(field) or "").strip()
+        if field == "report_title" and current and not is_generic_report_title(current):
+            continue
+        if current and field != "report_title":
+            continue
+        updated_metadata[field] = proposed
+
+    metadata_path.write_text(json.dumps(updated_metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {**preview, "updated": True, "skipped": False, "metadata": updated_metadata}
+
+
 def _clean_title(value: str) -> str:
     value = re.sub(r"^#+\s*", "", str(value or "").strip())
     value = re.sub(r"[*_`]+", "", value)
@@ -214,3 +322,28 @@ def _title_from_file_stem(file_stem: str) -> str:
     stem = re.sub(r"^\d{8}-\d{6}[_-]?", "", stem)
     stem = stem.replace("_", " ").replace("-", " ")
     return _clean_title(stem)
+
+
+def _has_text(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _read_json_metadata(path: Path) -> dict[str, Any]:
+    try:
+        if path and path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return {}
+
+
+def _read_markdown_if_needed(path: Path, needed: bool) -> str:
+    if not needed:
+        return ""
+    try:
+        if path and path.exists():
+            return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return ""
