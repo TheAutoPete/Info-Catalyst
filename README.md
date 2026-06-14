@@ -124,6 +124,17 @@ metadata 會記錄 video ID、source URL、analysis mode、model profile、usage
 
 舊 metadata 仍可相容讀取。
 
+## Source Library
+
+Source Library 會搜尋本機已封存的報告，資料來源是：
+
+```text
+reports/metadata/
+reports/markdown/
+```
+
+這個功能不會呼叫 OpenAI，也不會呼叫 YouTube。它只讀取本機 metadata 與 Markdown 報告，方便用標題、analysis mode、報告輸出語言、transcript source、source URL 或 video ID 瀏覽既有報告。
+
 ## Cost & Token Estimate
 
 產生報告前會顯示：
