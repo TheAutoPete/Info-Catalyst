@@ -17,6 +17,7 @@ from services.report_archive import (
 from ui.report_config_section import render_configure_report_section
 from ui.report_output_tabs import render_report_result_tabs
 from ui.sidebar import render_sidebar
+from ui.source_library_section import render_source_library_section
 from ui.source_section import render_prepare_source_section
 
 
@@ -203,6 +204,8 @@ st.caption("Private MVP for turning YouTube transcripts into AI research reports
 initialize_session_state()
 show_debug_info = render_sidebar(open_report)
 render_archived_report()
+with st.expander("Source Library", expanded=True):
+    render_source_library_section(open_report, key_prefix="source-library-main")
 source_state = render_prepare_source_section(
     show_debug=show_debug_info,
     open_report=open_report,
