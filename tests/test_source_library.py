@@ -224,6 +224,40 @@ def test_article_url_report_loads_and_searches_by_title_url_and_type(workspace):
     assert [record.report_path for record in type_matches] == [saved.report_path]
 
 
+def test_podcast_audio_url_report_loads_and_searches_by_title_url_and_type(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        content="# Podcast Audio URL Report\nBody",
+        video_id="",
+        source_url="https://cdn.example.com/podcast/episode.mp3",
+        video_title="",
+        source_type="podcast_audio_url",
+        source_id="audio-abcdef1234567890",
+        source_title="Podcast Audio Episode",
+        transcript_source="podcast_audio_url",
+        transcript_provider="openai_transcription",
+        transcript_language="en",
+    )
+
+    records = load_library_records(reports_dir=reports_dir, metadata_dir=metadata_dir)
+    title_matches = search_library_records(records, "Podcast Audio Episode")
+    url_matches = search_library_records(records, "episode.mp3")
+    type_matches = search_library_records(records, "podcast_audio_url")
+
+    assert records[0].report_path == saved.report_path
+    assert records[0].source_type == "podcast_audio_url"
+    assert records[0].video_id == ""
+    assert records[0].video_title == ""
+    assert records[0].transcript_source == "podcast_audio_url"
+    assert records[0].transcript_provider == "openai_transcription"
+    assert [record.report_path for record in title_matches] == [saved.report_path]
+    assert [record.report_path for record in url_matches] == [saved.report_path]
+    assert [record.report_path for record in type_matches] == [saved.report_path]
+
+
 def test_source_library_prefers_explicit_metadata_source_type(workspace):
     reports_dir = workspace / "reports" / "markdown"
     metadata_dir = workspace / "reports" / "metadata"
