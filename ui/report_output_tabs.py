@@ -101,6 +101,10 @@ def render_context_pack_controls(
 def render_report_settings_summary(metadata: dict) -> None:
     st.caption("Report settings")
     summary_fields = [
+        ("Report title", metadata_value(metadata, "report_title")),
+        ("Display title", metadata_value(metadata, "display_title")),
+        ("Source title", metadata_value(metadata, "source_title", "video_title")),
+        ("Title source", metadata_value(metadata, "title_source")),
         ("Analysis mode", metadata_value(metadata, "analysis_mode", "report_type")),
         ("Report output language", metadata_value(metadata, "output_language_label", "output_language")),
         ("Selected model", metadata_value(metadata, "selected_model")),
@@ -135,6 +139,11 @@ def render_metadata_tab(metadata: dict) -> None:
         return
 
     important_fields = {
+        "report_title": metadata.get("report_title"),
+        "display_title": metadata.get("display_title"),
+        "source_title": metadata.get("source_title"),
+        "title_source": metadata.get("title_source"),
+        "title_generated_at": metadata.get("title_generated_at"),
         "source_url": metadata.get("source_url"),
         "video_id": metadata.get("video_id"),
         "video_title": metadata.get("video_title"),

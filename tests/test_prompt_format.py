@@ -53,6 +53,8 @@ def test_mode_prompt_contains_shared_language_requirement():
 
     assert "Final output must be in Taiwan-style Traditional Chinese." in prompt
     assert "Convert Simplified Chinese terms to Traditional Chinese." in prompt
+    assert "must begin with one content-specific Markdown H1 title" in prompt
+    assert "Do not use generic H1 labels" in prompt
     assert "## 投資摘要" in prompt
     assert "## 對 portfolio / watchlist 的啟示" in prompt
     assert "model: gpt-5.5" in prompt

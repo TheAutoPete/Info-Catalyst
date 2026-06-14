@@ -15,7 +15,7 @@ def test_save_archived_report_writes_markdown_and_metadata():
     try:
         record = save_archived_report(
             "summary",
-            "# Summary Report\nBody",
+            "# AI Datacenter Power Bottleneck\nBody",
             video_id="dQw4w9WgXcQ",
             source_url="https://youtu.be/dQw4w9WgXcQ",
             video_title="Test Video Title",
@@ -37,8 +37,8 @@ def test_save_archived_report_writes_markdown_and_metadata():
             metadata_dir=metadata_dir,
         )
 
-        assert record.report_path.name == "2026-06-10_1630_test-video-title_dQw4w9WgXcQ_summary.md"
-        assert record.report_path.read_text(encoding="utf-8") == "# Summary Report\nBody\n"
+        assert record.report_path.name == "2026-06-10_1630_quick-summary_ai-datacenter-power-bottleneck_dQw4w9WgXcQ.md"
+        assert record.report_path.read_text(encoding="utf-8") == "# AI Datacenter Power Bottleneck\nBody\n"
 
         metadata = json.loads(record.metadata_path.read_text(encoding="utf-8"))
         assert metadata["video_id"] == "dQw4w9WgXcQ"
@@ -58,6 +58,12 @@ def test_save_archived_report_writes_markdown_and_metadata():
         assert metadata["output_language"] == "en"
         assert metadata["output_language_label"] == "English"
         assert metadata["report_file_path"] == str(record.report_path)
+        assert metadata["source_title"] == "Test Video Title"
+        assert metadata["report_title"] == "AI Datacenter Power Bottleneck"
+        assert metadata["display_title"] == "2026-06-10 16:30 - AI Datacenter Power Bottleneck - Quick Summary"
+        assert metadata["title_source"] == "report_h1"
+        assert metadata["title_generated_at"] == "2026-06-10T16:30:00"
+        assert record.display_title == "2026-06-10 16:30 - AI Datacenter Power Bottleneck - Quick Summary"
         assert record.output_language == "en"
         assert record.output_language_label == "English"
     finally:
@@ -115,8 +121,70 @@ def test_recent_reports_include_legacy_markdown_without_metadata():
         assert recent[0].metadata_path is None
         assert recent[0].report_type == "summary"
         assert recent[0].video_id == "dQw4w9WgXcQ"
+        assert recent[0].report_title == "Legacy"
+        assert recent[0].display_title.endswith(" - Legacy - summary")
         assert recent[0].output_language == "zh-TW"
         assert recent[0].output_language_label == "Traditional Chinese"
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+def test_recent_report_display_title_prefers_metadata_display_title():
+    workspace = _workspace_tmp_dir()
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+
+    try:
+        saved = save_archived_report(
+            "summary",
+            "# Specific H1\nBody",
+            video_id="abc12345678",
+            source_url="https://youtu.be/abc12345678",
+            analysis_mode="Quick Summary",
+            generated_at=datetime(2026, 6, 10, 12, 0),
+            reports_dir=reports_dir,
+            metadata_dir=metadata_dir,
+        )
+        metadata = json.loads(saved.metadata_path.read_text(encoding="utf-8"))
+        metadata["display_title"] = "Pinned Display Title"
+        saved.metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+
+        recent = list_recent_reports(reports_dir=reports_dir, metadata_dir=metadata_dir)
+
+        assert recent[0].display_title == "Pinned Display Title"
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+def test_legacy_metadata_without_title_fields_still_loads():
+    workspace = _workspace_tmp_dir()
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    reports_dir.mkdir(parents=True)
+    metadata_dir.mkdir(parents=True)
+    report_path = reports_dir / "legacy.md"
+    metadata_path = metadata_dir / "legacy.json"
+    report_path.write_text("# Legacy Metadata Title\nBody\n", encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "video_id": "abc12345678",
+                "video_title": "Legacy Video Title",
+                "generated_at": "2026-06-10T12:00:00",
+                "analysis_mode": "Quick Summary",
+                "report_file_path": str(report_path),
+                "report_type": "summary",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        recent = list_recent_reports(reports_dir=reports_dir, metadata_dir=metadata_dir)
+
+        assert len(recent) == 1
+        assert recent[0].report_title == "Legacy Metadata Title"
+        assert recent[0].display_title == "2026-06-10 12:00 - Legacy Metadata Title - Quick Summary"
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
