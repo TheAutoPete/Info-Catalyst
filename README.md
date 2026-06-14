@@ -126,6 +126,8 @@ metadata 會記錄 video ID、source URL、analysis mode、model profile、usage
 
 ## Source Library
 
+Source Library 位於側邊欄，並顯示在 Recent Reports 上方。它可用關鍵字、Analysis Mode、Output Language、Transcript Source 篩選本機封存報告，也可刪除封存報告。刪除時會移除 Markdown 報告與對應 metadata JSON；若 Context Pack 安全連結到 `reports/context/` 內，也會一併移除。Transcript cache 預設不會刪除。
+
 Source Library 會搜尋本機已封存的報告，資料來源是：
 
 ```text
@@ -147,6 +149,27 @@ reports/markdown/
 - qualitative cost level：Low / Medium / High / Very High
 
 若成本等級是 High 或 Very High，必須勾選確認後才能產生報告。Audio transcription fallback 會另外顯示成本與耗時提醒。
+
+## Streamlit UI 沒更新
+
+如果 Codex 修改 UI 後，瀏覽器仍顯示舊畫面，通常是舊 Streamlit process 還在跑。
+
+快速流程：
+
+```powershell
+netstat -ano | Select-String ":8501"
+Stop-Process -Id <PID> -Force
+.\run_app.ps1
+```
+
+也可以使用 helper script：
+
+```powershell
+.\scripts\stop_streamlit.ps1
+.\run_app.ps1
+```
+
+完整說明請見 [`docs/troubleshooting-streamlit.md`](docs/troubleshooting-streamlit.md)。
 
 ## Debugging
 

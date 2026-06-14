@@ -3,10 +3,11 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from services.report_archive import save_archived_report
+from services.report_archive import delete_report_record, list_recent_reports, save_archived_report
 from services.source_library import (
     build_library_record_from_report_record,
     filter_library_records,
@@ -203,6 +204,158 @@ def test_search_and_filter_do_not_call_real_youtube_or_openai(workspace, monkeyp
     assert [record.video_id for record in matches] == ["abc12345678"]
 
 
+def test_delete_report_record_deletes_markdown_metadata_and_safe_context_pack(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    context_dir = workspace / "reports" / "context"
+    context_dir.mkdir(parents=True)
+    context_path = context_dir / "sample_context-pack.md"
+    context_path.write_text("context", encoding="utf-8")
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_pack_path=str(context_path),
+    )
+
+    result = delete_report_record(
+        saved,
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_dir=context_dir,
+    )
+
+    assert result["errors"] == []
+    assert result["deleted_report_path"] == str(saved.report_path)
+    assert result["deleted_metadata_path"] == str(saved.metadata_path)
+    assert result["deleted_context_pack_path"] == str(context_path)
+    assert not saved.report_path.exists()
+    assert not saved.metadata_path.exists()
+    assert not context_path.exists()
+
+
+def test_delete_report_record_skips_context_pack_outside_expected_directory(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    context_dir = workspace / "reports" / "context"
+    outside_context = workspace / "outside_context.md"
+    outside_context.write_text("do not delete", encoding="utf-8")
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_pack_path=str(outside_context),
+    )
+
+    result = delete_report_record(
+        saved,
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_dir=context_dir,
+    )
+
+    assert result["errors"] == []
+    assert str(outside_context) in result["skipped_paths"]
+    assert outside_context.exists()
+    assert not saved.report_path.exists()
+    assert not saved.metadata_path.exists()
+
+
+def test_delete_report_record_does_not_delete_transcript_cache(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    context_dir = workspace / "reports" / "context"
+    transcript_path = workspace / "reports" / "transcripts" / "abc12345678.json"
+    transcript_path.parent.mkdir(parents=True)
+    transcript_path.write_text('{"transcript": "cached"}', encoding="utf-8")
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        transcript_cache_path=str(transcript_path),
+    )
+
+    result = delete_report_record(
+        saved,
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_dir=context_dir,
+    )
+
+    assert result["errors"] == []
+    assert transcript_path.exists()
+    assert not saved.report_path.exists()
+    assert not saved.metadata_path.exists()
+
+
+def test_delete_report_record_handles_missing_metadata_gracefully(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    context_dir = workspace / "reports" / "context"
+    saved = _save_report(reports_dir=reports_dir, metadata_dir=metadata_dir)
+    saved.metadata_path.unlink()
+
+    result = delete_report_record(
+        saved,
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_dir=context_dir,
+    )
+
+    assert result["errors"] == []
+    assert result["deleted_report_path"] == str(saved.report_path)
+    assert result["deleted_metadata_path"] == ""
+    assert str(saved.metadata_path) in result["skipped_paths"]
+    assert not saved.report_path.exists()
+
+
+def test_delete_report_record_refuses_report_paths_outside_expected_directory(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    context_dir = workspace / "reports" / "context"
+    unsafe_report = workspace / "outside.md"
+    unsafe_report.write_text("do not delete", encoding="utf-8")
+    record = SimpleNamespace(report_path=unsafe_report, metadata_path=None, context_pack_path="")
+
+    result = delete_report_record(
+        record,
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_dir=context_dir,
+    )
+
+    assert result["deleted_report_path"] == ""
+    assert str(unsafe_report) in result["skipped_paths"]
+    assert result["errors"]
+    assert unsafe_report.exists()
+
+
+def test_deleting_one_report_does_not_break_loading_remaining_reports(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    context_dir = workspace / "reports" / "context"
+    first = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        video_id="abc12345678",
+        generated_at=datetime(2026, 6, 10, 12, 0),
+    )
+    second = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        video_id="def12345678",
+        generated_at=datetime(2026, 6, 10, 13, 0),
+    )
+
+    result = delete_report_record(
+        first,
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        context_dir=context_dir,
+    )
+    remaining = list_recent_reports(reports_dir=reports_dir, metadata_dir=metadata_dir)
+
+    assert result["errors"] == []
+    assert [record.report_path for record in remaining] == [second.report_path]
+
+
 def _library_records(workspace):
     reports_dir = workspace / "reports" / "markdown"
     metadata_dir = workspace / "reports" / "metadata"
@@ -250,6 +403,8 @@ def _save_report(
     output_language="en",
     output_language_label="English",
     transcript_source="manual",
+    context_pack_path="",
+    transcript_cache_path="",
     generated_at=datetime(2026, 6, 10, 12, 0),
 ):
     return save_archived_report(
@@ -264,6 +419,8 @@ def _save_report(
         reasoning_effort="low",
         transcript_source=transcript_source,
         transcript_provider=transcript_source,
+        context_pack_path=context_pack_path,
+        transcript_cache_path=transcript_cache_path,
         output_language=output_language,
         output_language_label=output_language_label,
         generated_at=generated_at,
