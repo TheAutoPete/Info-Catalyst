@@ -104,6 +104,45 @@ def test_recent_reports_and_duplicate_lookup_use_metadata():
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+def test_save_archived_report_supports_manual_text_metadata():
+    workspace = _workspace_tmp_dir()
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+
+    try:
+        record = save_archived_report(
+            "summary",
+            "# Manual Article Report\nBody",
+            video_id="",
+            source_url="https://example.com/manual-article",
+            video_title="",
+            source_type="manual_text",
+            source_id="manual-abc123",
+            source_title="Manual Article",
+            transcript_language="en",
+            transcript_source="manual_text",
+            transcript_provider="manual_text",
+            generated_at=datetime(2026, 6, 10, 16, 30),
+            reports_dir=reports_dir,
+            metadata_dir=metadata_dir,
+        )
+
+        metadata = json.loads(record.metadata_path.read_text(encoding="utf-8"))
+        assert metadata["source_type"] == "manual_text"
+        assert metadata["source_id"] == "manual-abc123"
+        assert metadata["source_title"] == "Manual Article"
+        assert metadata["source_url"] == "https://example.com/manual-article"
+        assert metadata["video_id"] == ""
+        assert metadata["video_title"] == ""
+        assert metadata["transcript_source"] == "manual_text"
+        assert metadata["transcript_provider"] == "manual_text"
+        assert metadata["transcript_language"] == "en"
+        assert record.source_type == "manual_text"
+        assert record.source_id == "manual-abc123"
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
 def test_recent_reports_include_legacy_markdown_without_metadata():
     workspace = _workspace_tmp_dir()
     reports_dir = workspace / "reports" / "markdown"

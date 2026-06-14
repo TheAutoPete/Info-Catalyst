@@ -25,6 +25,8 @@ class ReportRecord:
     transcript_language: str
     generated_at: str
     models: dict[str, str]
+    source_type: str = "youtube"
+    source_id: str = ""
     analysis_mode: str = ""
     selected_model: str = ""
     reasoning_effort: str = ""
@@ -64,6 +66,9 @@ def save_archived_report(
     video_id: str,
     source_url: str,
     video_title: str = "",
+    source_type: str = "youtube",
+    source_id: str = "",
+    source_title: str = "",
     transcript_language: str = "",
     models: dict[str, str] | None = None,
     analysis_mode: str = "",
@@ -86,7 +91,8 @@ def save_archived_report(
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = generated_at or datetime.now()
-    source_title = video_title
+    source_title = source_title or video_title
+    source_id = source_id or video_id
     title_metadata = resolve_report_title(
         markdown_text=content,
         source_title=source_title,
@@ -99,7 +105,7 @@ def save_archived_report(
         generated_at=generated_at,
         analysis_mode=analysis_mode or report_type,
         report_title=title_metadata["report_title"],
-        source_id=video_id or "manual-transcript",
+        source_id=source_id or video_id or "manual-text",
     )
     report_path = _dedupe_path(reports_dir / filename)
     report_path.write_text(content.strip() + "\n", encoding="utf-8")
@@ -109,6 +115,8 @@ def save_archived_report(
     metadata_path = metadata_dir / metadata_path.name
     metadata = {
         "video_id": video_id,
+        "source_type": source_type,
+        "source_id": source_id,
         "source_url": source_url,
         "video_title": video_title,
         "transcript_language": transcript_language,
@@ -139,6 +147,8 @@ def save_archived_report(
         video_id=video_id,
         source_url=source_url,
         video_title=video_title,
+        source_type=source_type,
+        source_id=source_id,
         transcript_language=transcript_language,
         generated_at=metadata["generated_at"],
         models=metadata["models"],
@@ -385,6 +395,8 @@ def _record_from_metadata(metadata_path: Path, metadata: dict[str, Any]) -> Repo
         transcript_language=str(metadata.get("transcript_language") or ""),
         generated_at=str(metadata.get("generated_at") or ""),
         models=dict(metadata.get("models") or {}),
+        source_type=str(metadata.get("source_type") or ""),
+        source_id=str(metadata.get("source_id") or metadata.get("video_id") or ""),
         analysis_mode=str(metadata.get("analysis_mode") or ""),
         selected_model=str(metadata.get("selected_model") or ""),
         reasoning_effort=str(metadata.get("reasoning_effort") or ""),
@@ -425,6 +437,8 @@ def _record_from_legacy_markdown(path: Path) -> ReportRecord:
         transcript_language="",
         generated_at=generated_at,
         models={},
+        source_type="youtube" if video_id else "",
+        source_id=video_id,
         analysis_mode="",
         selected_model="",
         reasoning_effort="",

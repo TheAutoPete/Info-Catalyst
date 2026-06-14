@@ -42,6 +42,15 @@ OPENAI_USE_SYSTEM_PROXY=false
 
 ## Transcript Flow
 
+## Source Type
+
+Step 1 現在支援 `Source Type` 選擇器，目前可選：
+
+- `YouTube URL`
+- `Manual Text / Article Paste`
+
+`Manual Text / Article Paste` 可用來分析貼上的文章、逐字稿、筆記或複製內容，不需要 YouTube URL。Article URL 自動擷取與 Podcast / Audio URL 支援會留到後續 issue。
+
 YouTube 可能會對過度頻繁的自動字幕請求做流量限制，常見錯誤是 `RequestBlocked` 或 `IpBlocked`。Info Catalyst 現在採用 cache-first 與明確按鈕觸發：
 
 1. 貼上 YouTube URL。
