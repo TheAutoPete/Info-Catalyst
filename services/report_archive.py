@@ -1,5 +1,4 @@
 import json
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +6,11 @@ from typing import Any
 
 from config import REPORTS_DIR, REPORT_METADATA_DIR
 from services.output_languages import get_output_language
+from services.report_titles import (
+    build_safe_report_filename,
+    resolve_display_title_from_metadata,
+    resolve_report_title,
+)
 
 
 @dataclass(frozen=True)
@@ -31,11 +35,25 @@ class ReportRecord:
     transcript_created_at: str = ""
     output_language: str = ""
     output_language_label: str = ""
+    source_title: str = ""
+    report_title: str = ""
+    metadata_display_title: str = ""
+    title_source: str = ""
+    title_generated_at: str = ""
 
     @property
     def display_title(self) -> str:
-        title = self.video_title or self.video_id or "Untitled video"
-        return f"{title} - {self.report_type}"
+        if self.metadata_display_title:
+            return self.metadata_display_title
+        resolved = resolve_report_title(
+            source_title=self.source_title,
+            video_title=self.video_title,
+            video_id=self.video_id,
+            file_stem=self.report_path.stem,
+            analysis_mode=self.analysis_mode or self.report_type,
+            generated_at=self.generated_at,
+        )
+        return resolved["display_title"]
 
 
 def save_archived_report(
@@ -67,11 +85,21 @@ def save_archived_report(
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = generated_at or datetime.now()
-    timestamp = generated_at.strftime("%Y-%m-%d_%H%M")
-    title_slug = _slugify(video_title or "youtube-video")
-    video_slug = _slugify(video_id or "manual-transcript", lowercase=False)
-    report_slug = _slugify(report_type)
-    filename = f"{timestamp}_{title_slug}_{video_slug}_{report_slug}.md"
+    source_title = video_title
+    title_metadata = resolve_report_title(
+        markdown_text=content,
+        source_title=source_title,
+        video_title=video_title,
+        video_id=video_id,
+        analysis_mode=analysis_mode or report_type,
+        generated_at=generated_at,
+    )
+    filename = build_safe_report_filename(
+        generated_at=generated_at,
+        analysis_mode=analysis_mode or report_type,
+        report_title=title_metadata["report_title"],
+        source_id=video_id or "manual-transcript",
+    )
     report_path = _dedupe_path(reports_dir / filename)
     report_path.write_text(content.strip() + "\n", encoding="utf-8")
     language = get_output_language(output_language or output_language_label)
@@ -99,6 +127,7 @@ def save_archived_report(
         "output_language_label": output_language_label or language.label,
         "report_file_path": str(report_path),
         "report_type": report_type,
+        **title_metadata,
     }
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -123,6 +152,11 @@ def save_archived_report(
         transcript_created_at=transcript_created_at,
         output_language=language.code,
         output_language_label=output_language_label or language.label,
+        source_title=metadata["source_title"],
+        report_title=metadata["report_title"],
+        metadata_display_title=metadata["display_title"],
+        title_source=metadata["title_source"],
+        title_generated_at=metadata["title_generated_at"],
     )
 
 
@@ -230,6 +264,17 @@ def _load_metadata_records(metadata_dir: Path) -> list[ReportRecord]:
 def _record_from_metadata(metadata_path: Path, metadata: dict[str, Any]) -> ReportRecord:
     report_path = Path(metadata.get("report_file_path", ""))
     language = get_output_language(str(metadata.get("output_language") or metadata.get("output_language_label") or ""))
+    markdown_text = _read_report_text_if_available(report_path)
+    display_title = resolve_display_title_from_metadata(metadata, markdown_text=markdown_text, file_stem=report_path.stem)
+    title_metadata = resolve_report_title(
+        markdown_text=markdown_text,
+        source_title=str(metadata.get("source_title") or ""),
+        video_title=str(metadata.get("video_title") or ""),
+        video_id=str(metadata.get("video_id") or ""),
+        file_stem=report_path.stem,
+        analysis_mode=str(metadata.get("analysis_mode") or metadata.get("report_type") or ""),
+        generated_at=str(metadata.get("generated_at") or ""),
+    )
     return ReportRecord(
         report_path=report_path,
         metadata_path=metadata_path,
@@ -251,19 +296,34 @@ def _record_from_metadata(metadata_path: Path, metadata: dict[str, Any]) -> Repo
         transcript_created_at=str(metadata.get("transcript_created_at") or ""),
         output_language=str(metadata.get("output_language") or language.code),
         output_language_label=str(metadata.get("output_language_label") or language.label),
+        source_title=str(metadata.get("source_title") or title_metadata["source_title"]),
+        report_title=str(metadata.get("report_title") or title_metadata["report_title"]),
+        metadata_display_title=display_title,
+        title_source=str(metadata.get("title_source") or title_metadata["title_source"]),
+        title_generated_at=str(metadata.get("title_generated_at") or title_metadata["title_generated_at"]),
     )
 
 
 def _record_from_legacy_markdown(path: Path) -> ReportRecord:
+    generated_at = datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+    report_type = _infer_report_type(path)
+    video_id = _infer_video_id(path)
+    title_metadata = resolve_report_title(
+        markdown_text=_read_report_text_if_available(path),
+        video_id=video_id,
+        file_stem=path.stem,
+        analysis_mode=report_type,
+        generated_at=generated_at,
+    )
     return ReportRecord(
         report_path=path,
         metadata_path=None,
-        report_type=_infer_report_type(path),
-        video_id=_infer_video_id(path),
+        report_type=report_type,
+        video_id=video_id,
         source_url="",
         video_title="",
         transcript_language="",
-        generated_at=datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
+        generated_at=generated_at,
         models={},
         analysis_mode="",
         selected_model="",
@@ -271,6 +331,11 @@ def _record_from_legacy_markdown(path: Path) -> ReportRecord:
         model_override=False,
         output_language=get_output_language().code,
         output_language_label=get_output_language().label,
+        source_title=title_metadata["source_title"],
+        report_title=title_metadata["report_title"],
+        metadata_display_title=title_metadata["display_title"],
+        title_source=title_metadata["title_source"],
+        title_generated_at=title_metadata["title_generated_at"],
     )
 
 
@@ -307,9 +372,10 @@ def _dedupe_path(path: Path) -> Path:
     raise RuntimeError(f"Could not create a unique report filename for {path.name}.")
 
 
-def _slugify(value: str, *, lowercase: bool = True) -> str:
-    slug = re.sub(r"[^\w-]+", "-", value.strip(), flags=re.UNICODE)
-    slug = re.sub(r"-{2,}", "-", slug).strip("-_")
-    if lowercase:
-        slug = slug.lower()
-    return slug[:80] or "report"
+def _read_report_text_if_available(path: Path) -> str:
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return ""

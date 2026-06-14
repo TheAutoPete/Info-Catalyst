@@ -8,7 +8,7 @@ def render_recent_reports_sidebar(open_report) -> None:
     recent_reports = list_recent_reports(limit=20)
     if recent_reports:
         for index, record in enumerate(recent_reports):
-            label = f"{record.display_title} ({record.generated_at[:16].replace('T', ' ')})"
+            label = record.display_title
             if st.button(label, key=f"recent-report-{index}", use_container_width=True):
                 open_report(record.report_path)
     else:

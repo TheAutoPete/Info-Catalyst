@@ -137,4 +137,10 @@ def add_report_header(
             f"- Model Selection: {selection}",
         ]
     )
-    return f"{header}\n\n{report.strip()}"
+    report = report.strip()
+    if report.startswith("# "):
+        first_line, separator, rest = report.partition("\n")
+        if separator:
+            return f"{first_line}\n\n{header}\n\n{rest.strip()}"
+        return f"{first_line}\n\n{header}"
+    return f"{header}\n\n{report}"
