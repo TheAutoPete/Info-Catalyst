@@ -1,4 +1,5 @@
 import logging
+import hashlib
 from datetime import datetime
 
 import streamlit as st
@@ -17,12 +18,52 @@ from services.url_parser import YouTubeUrlError, extract_video_id
 from ui.components import render_transcript_status_card
 
 
+SOURCE_TYPE_YOUTUBE_LABEL = "YouTube URL"
+SOURCE_TYPE_MANUAL_TEXT_LABEL = "Manual Text / Article Paste"
+MANUAL_SOURCE_LANGUAGES = ["zh-TW", "zh-Hant", "zh-Hans", "en", "ja", "unknown"]
+
+
+def stable_manual_source_id(*, source_title: str, source_url: str, text: str) -> str:
+    seed = source_url.strip() or f"{source_title.strip()}:{text.strip()[:500]}"
+    if not seed.strip():
+        return "manual-text"
+    return f"manual-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:16]}"
+
+
+def prepared_from_manual_text(
+    *,
+    text: str,
+    source_title: str,
+    source_url: str,
+    language: str,
+    source_id: str,
+) -> dict:
+    return {
+        "text": text,
+        "source": "manual_text",
+        "provider": "manual_text",
+        "language": language,
+        "source_type": "manual_text",
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_id": source_id,
+        "cache_path": "",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "available_transcripts": [],
+        "debug_messages": [],
+    }
+
+
 def prepared_from_cache(record) -> dict:
     return {
         "text": record.transcript_text,
         "source": record.source_type if record.source_type != "youtube" else "cached",
         "provider": record.transcript_provider or "cached",
         "language": record.transcript_language,
+        "source_type": record.source_type,
+        "source_id": record.source_id,
+        "source_url": record.source_url,
+        "source_title": "",
         "cache_path": record.transcript_cache_path,
         "created_at": record.created_at or record.fetched_at,
         "available_transcripts": list(record.available_transcripts),
@@ -56,6 +97,10 @@ def prepared_from_result(result, *, source_url: str, source_type: str = "youtube
         "source": source_type,
         "provider": result.transcript_provider,
         "language": cache_record.transcript_language,
+        "source_type": source_type,
+        "source_id": result.video_id,
+        "source_url": source_url,
+        "source_title": "",
         "cache_path": cache_record.transcript_cache_path,
         "created_at": cache_record.created_at or cache_record.fetched_at,
         "available_transcripts": available,
@@ -79,6 +124,10 @@ def prepared_from_manual(*, text: str, video_id: str, source_url: str, language:
         "source": "manual",
         "provider": "manual",
         "language": cache_record.transcript_language,
+        "source_type": "youtube",
+        "source_id": video_id or source_id,
+        "source_url": source_url,
+        "source_title": "",
         "cache_path": cache_record.transcript_cache_path,
         "created_at": cache_record.created_at,
         "available_transcripts": [],
@@ -88,8 +137,25 @@ def prepared_from_manual(*, text: str, video_id: str, source_url: str, language:
 
 def set_prepared_transcript(video_id: str, prepared: dict) -> None:
     st.session_state.prepared_video_id = video_id
+    st.session_state.prepared_source_id = prepared.get("source_id") or video_id
+    st.session_state.prepared_source_type = prepared.get("source_type") or "youtube"
     st.session_state.prepared_transcript = prepared
     st.session_state.transcript_debug_messages = prepared.get("debug_messages", [])
+
+
+def clear_prepared_transcript() -> None:
+    st.session_state.prepared_video_id = ""
+    st.session_state.prepared_source_id = ""
+    st.session_state.prepared_source_type = ""
+    st.session_state.prepared_transcript = None
+    st.session_state.transcript_debug_messages = []
+
+
+def reset_prepared_transcript_for_source_type(source_type: str) -> None:
+    if st.session_state.get("active_source_type") == source_type:
+        return
+    st.session_state.active_source_type = source_type
+    clear_prepared_transcript()
 
 
 def can_refresh_youtube(video_id: str, cooldown_seconds: int = 60) -> tuple[bool, int]:
@@ -305,7 +371,7 @@ def render_audio_fallback_controls(*, video_id: str | None, youtube_url: str, sh
                     show_debug_exception(exc)
 
 
-def render_transcript_preview(*, final_transcript: str, youtube_url: str, transcript_error: str | None) -> None:
+def render_transcript_preview(*, final_transcript: str, source_url: str, transcript_error: str | None) -> None:
     if final_transcript:
         st.subheader("Transcript Preview")
         st.text_area(
@@ -317,11 +383,46 @@ def render_transcript_preview(*, final_transcript: str, youtube_url: str, transc
         )
         if len(final_transcript) > 4000:
             st.caption(f"Showing first 4,000 characters of {len(final_transcript):,}.")
-    elif youtube_url and transcript_error:
+    elif source_url and transcript_error:
         st.info("Paste a transcript in Other transcript options to continue.")
 
 
-def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
+def render_manual_text_source_controls() -> dict:
+    source_title = st.text_input("Source title", placeholder="Article, transcript, notes, or copied content title")
+    source_url = st.text_input("Source URL (optional)", placeholder="https://example.com/source")
+    source_language = st.selectbox("Source language", MANUAL_SOURCE_LANGUAGES, index=0)
+    manual_text = st.text_area(
+        "Pasted article text / transcript / notes / copied content",
+        height=300,
+        placeholder="Paste the source text you want Info Catalyst to analyze.",
+    )
+    source_id = stable_manual_source_id(source_title=source_title, source_url=source_url, text=manual_text)
+
+    if st.button(
+        "Prepare manual text source",
+        disabled=not bool(source_title.strip() and manual_text.strip()),
+        use_container_width=True,
+    ):
+        prepared = prepared_from_manual_text(
+            text=manual_text.strip(),
+            source_title=source_title.strip(),
+            source_url=source_url.strip(),
+            language=source_language,
+            source_id=source_id,
+        )
+        set_prepared_transcript(source_id, prepared)
+        st.success("Manual text source prepared.")
+        st.rerun()
+
+    return {
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_language": source_language,
+        "source_id": source_id,
+    }
+
+
+def render_youtube_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
     transcript = ""
     video_id = None
     transcript_error = None
@@ -329,7 +430,6 @@ def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_e
     duplicate_reports = []
     cached_record = None
 
-    st.header("Step 1: Prepare Source")
     youtube_url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
     video_title = st.text_input("Video title (optional)", placeholder="Optional title")
 
@@ -413,7 +513,7 @@ def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_e
 
     render_transcript_preview(
         final_transcript=final_transcript,
-        youtube_url=youtube_url,
+        source_url=youtube_url,
         transcript_error=transcript_error,
     )
 
@@ -421,8 +521,65 @@ def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_e
         "youtube_url": youtube_url,
         "video_title": video_title,
         "video_id": video_id,
+        "source_type": "youtube",
+        "source_title": video_title,
+        "source_url": youtube_url,
+        "source_id": video_id or "",
         "transcript_language": transcript_language,
         "duplicate_reports": duplicate_reports,
         "generate_duplicate_report": generate_duplicate_report,
         "final_transcript": final_transcript,
     }
+
+
+def render_manual_text_source_section() -> dict:
+    manual_state = render_manual_text_source_controls()
+    prepared = st.session_state.get("prepared_transcript") or {}
+    if prepared.get("source_type") != "manual_text":
+        prepared = {}
+    final_transcript = prepared.get("text", "")
+    transcript_language = prepared.get("language") or manual_state["source_language"]
+    source_title = prepared.get("source_title") or manual_state["source_title"]
+    source_url = prepared.get("source_url") or manual_state["source_url"]
+    source_id = prepared.get("source_id") or manual_state["source_id"]
+
+    render_transcript_status_card(prepared=prepared, transcript_error=None, cached_record=None)
+    render_transcript_preview(
+        final_transcript=final_transcript,
+        source_url=source_url,
+        transcript_error=None,
+    )
+
+    return {
+        "youtube_url": "",
+        "video_title": source_title,
+        "video_id": "",
+        "source_type": "manual_text",
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_id": source_id,
+        "transcript_language": transcript_language,
+        "duplicate_reports": [],
+        "generate_duplicate_report": True,
+        "final_transcript": final_transcript,
+    }
+
+
+def render_prepare_source_section(*, show_debug: bool, open_report, show_debug_exception) -> dict:
+    st.header("Step 1: Prepare Source")
+    selected_label = st.selectbox(
+        "Source Type",
+        [SOURCE_TYPE_YOUTUBE_LABEL, SOURCE_TYPE_MANUAL_TEXT_LABEL],
+        key="source_type_selector",
+    )
+    source_type = "manual_text" if selected_label == SOURCE_TYPE_MANUAL_TEXT_LABEL else "youtube"
+    reset_prepared_transcript_for_source_type(source_type)
+
+    if source_type == "manual_text":
+        return render_manual_text_source_section()
+
+    return render_youtube_source_section(
+        show_debug=show_debug,
+        open_report=open_report,
+        show_debug_exception=show_debug_exception,
+    )

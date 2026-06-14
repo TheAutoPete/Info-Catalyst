@@ -56,6 +56,12 @@ def initialize_session_state() -> None:
         st.session_state.prepared_transcript = None
     if "prepared_video_id" not in st.session_state:
         st.session_state.prepared_video_id = ""
+    if "prepared_source_id" not in st.session_state:
+        st.session_state.prepared_source_id = ""
+    if "prepared_source_type" not in st.session_state:
+        st.session_state.prepared_source_type = ""
+    if "active_source_type" not in st.session_state:
+        st.session_state.active_source_type = ""
     if "transcript_debug_messages" not in st.session_state:
         st.session_state.transcript_debug_messages = []
     if "last_youtube_fetch_at" not in st.session_state:
@@ -114,20 +120,23 @@ def render_generate_export_section(*, source_state: dict, report_state: dict) ->
         selected_output_language = report_state["selected_output_language"]
         analysis_mode = report_state["analysis_mode"]
         override_model_settings = report_state["override_model_settings"]
-        youtube_url = source_state["youtube_url"]
-        video_title = source_state["video_title"]
-        video_id = source_state["video_id"]
-        transcript_language = source_state["transcript_language"]
+        source_url = source_state.get("source_url") or source_state.get("youtube_url") or ""
+        source_title = source_state.get("source_title") or source_state.get("video_title") or ""
+        source_type = source_state.get("source_type") or "youtube"
+        source_id = source_state.get("source_id") or source_state.get("video_id") or "manual-text"
+        video_id = source_state.get("video_id") or ""
+        video_title = source_state.get("video_title") or source_title
+        transcript_language = source_state.get("transcript_language") or ""
 
         models_used = {
             selected_mode.slug: selected_profile.model,
         }
-        archive_video_id = video_id or "manual-transcript"
+        archive_video_id = video_id if source_type == "youtube" else ""
         report_type = selected_mode.slug
         prepared = st.session_state.get("prepared_transcript") or {}
         prompt = build_mode_report_prompt(
             final_transcript,
-            youtube_url,
+            source_url,
             analysis_mode=analysis_mode,
             profile=selected_profile,
             output_language=selected_output_language.code,
@@ -153,8 +162,11 @@ def render_generate_export_section(*, source_state: dict, report_state: dict) ->
                 report_type,
                 report,
                 video_id=archive_video_id,
-                source_url=youtube_url,
+                source_url=source_url,
                 video_title=video_title,
+                source_type=source_type,
+                source_id=source_id,
+                source_title=source_title,
                 transcript_language=transcript_language,
                 models=models_used,
                 analysis_mode=analysis_mode,

@@ -21,6 +21,7 @@ SEARCH_FIELDS = (
     "transcript_source",
     "transcript_language",
     "selected_model",
+    "source_type",
 )
 
 
@@ -77,6 +78,7 @@ def build_library_record_from_report_record(record: ReportRecord) -> SourceLibra
     video_id = _first_text(metadata.get("video_id"), record.video_id)
     transcript_source = _first_text(metadata.get("transcript_source"), record.transcript_source, UNKNOWN)
     report_type = _first_text(metadata.get("report_type"), record.report_type, UNKNOWN)
+    source_type = _first_text(metadata.get("source_type"), record.source_type)
 
     return SourceLibraryRecord(
         report_path=record.report_path,
@@ -98,7 +100,8 @@ def build_library_record_from_report_record(record: ReportRecord) -> SourceLibra
         generated_at=_first_text(metadata.get("generated_at"), record.generated_at),
         context_pack_path=_first_text(metadata.get("context_pack_path"), record.context_pack_path),
         report_type=report_type,
-        source_type=_infer_source_type(
+        source_type=source_type
+        or _infer_source_type(
             source_url=source_url,
             video_id=video_id,
             transcript_source=transcript_source,
@@ -188,6 +191,8 @@ def _infer_source_type(*, source_url: str, video_id: str, transcript_source: str
     url = source_url.casefold()
     if source == "audio_transcription":
         return "audio"
+    if source == "manual_text":
+        return "manual_text"
     if source == "manual" or video_id == "manual-transcript":
         return "manual"
     if "youtube.com" in url or "youtu.be" in url or _looks_like_youtube_video_id(video_id):

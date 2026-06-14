@@ -76,6 +76,7 @@ def render_source_library_section(
             details = [
                 record.generated_at,
                 record.analysis_mode,
+                record.source_type,
                 _output_language_display(record),
                 record.transcript_source,
             ]
@@ -238,6 +239,12 @@ def _output_language_display(record) -> str:
 
 
 def _source_display(record) -> str:
+    if record.source_type == "manual_text":
+        if record.source_url:
+            return f"Source URL: {record.source_url}"
+        if record.source_title:
+            return f"Source: {record.source_title}"
+        return "Manual text source"
     if record.video_id:
         return f"Video ID: {record.video_id}"
     if record.source_url:

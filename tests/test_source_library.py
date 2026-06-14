@@ -163,6 +163,52 @@ def test_filter_by_source_type(workspace):
     assert [record.video_id for record in matches] == ["def12345678"]
 
 
+def test_manual_text_report_loads_and_searches_by_title_and_url(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        content="# Manual Text Report\nBody",
+        video_id="",
+        source_url="https://example.com/semiconductor-notes",
+        video_title="",
+        source_type="manual_text",
+        source_id="manual-notes",
+        source_title="Semiconductor Notes",
+        transcript_source="manual_text",
+    )
+
+    records = load_library_records(reports_dir=reports_dir, metadata_dir=metadata_dir)
+    title_matches = search_library_records(records, "Semiconductor Notes")
+    url_matches = search_library_records(records, "semiconductor-notes")
+
+    assert records[0].report_path == saved.report_path
+    assert records[0].source_type == "manual_text"
+    assert records[0].video_id == ""
+    assert [record.report_path for record in title_matches] == [saved.report_path]
+    assert [record.report_path for record in url_matches] == [saved.report_path]
+
+
+def test_source_library_prefers_explicit_metadata_source_type(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        video_id="abc12345678",
+        source_url="https://youtu.be/abc12345678",
+        source_type="manual_text",
+        source_id="manual-explicit",
+        source_title="Explicit Manual Source",
+        transcript_source="youtube",
+    )
+
+    record = build_library_record_from_report_record(saved)
+
+    assert record.source_type == "manual_text"
+
+
 def test_handle_legacy_metadata_with_missing_fields(workspace):
     reports_dir = workspace / "reports" / "markdown"
     metadata_dir = workspace / "reports" / "metadata"
@@ -399,10 +445,14 @@ def _save_report(
     content="# AI Datacenter Power Bottleneck\nBody",
     video_id="abc12345678",
     source_url="https://youtu.be/abc12345678",
+    video_title="Sample Video",
     analysis_mode="Quick Summary",
     output_language="en",
     output_language_label="English",
     transcript_source="manual",
+    source_type="",
+    source_id="",
+    source_title="Sample Video",
     context_pack_path="",
     transcript_cache_path="",
     generated_at=datetime(2026, 6, 10, 12, 0),
@@ -412,7 +462,10 @@ def _save_report(
         content,
         video_id=video_id,
         source_url=source_url,
-        video_title="Sample Video",
+        video_title=video_title,
+        source_type=source_type,
+        source_id=source_id or video_id,
+        source_title=source_title,
         transcript_language="zh-TW",
         analysis_mode=analysis_mode,
         selected_model="gpt-5.4-mini",
