@@ -125,7 +125,7 @@ def render_generate_export_section(*, source_state: dict, report_state: dict) ->
         source_type = source_state.get("source_type") or "youtube"
         source_id = source_state.get("source_id") or source_state.get("video_id") or "manual-text"
         video_id = source_state.get("video_id") or ""
-        video_title = source_state.get("video_title") or source_title
+        video_title = (source_state.get("video_title") or source_title) if source_type == "youtube" else ""
         transcript_language = source_state.get("transcript_language") or ""
 
         models_used = {

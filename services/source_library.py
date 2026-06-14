@@ -191,6 +191,8 @@ def _infer_source_type(*, source_url: str, video_id: str, transcript_source: str
     url = source_url.casefold()
     if source == "audio_transcription":
         return "audio"
+    if source == "article_url":
+        return "article_url"
     if source == "manual_text":
         return "manual_text"
     if source == "manual" or video_id == "manual-transcript":

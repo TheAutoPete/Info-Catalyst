@@ -190,6 +190,40 @@ def test_manual_text_report_loads_and_searches_by_title_and_url(workspace):
     assert [record.report_path for record in url_matches] == [saved.report_path]
 
 
+def test_article_url_report_loads_and_searches_by_title_url_and_type(workspace):
+    reports_dir = workspace / "reports" / "markdown"
+    metadata_dir = workspace / "reports" / "metadata"
+    saved = _save_report(
+        reports_dir=reports_dir,
+        metadata_dir=metadata_dir,
+        content="# Article URL Report\nBody",
+        video_id="",
+        source_url="https://example.com/research/article-url-case",
+        video_title="",
+        source_type="article_url",
+        source_id="article-abcdef1234567890",
+        source_title="Article URL Case Study",
+        transcript_source="article_url",
+        transcript_provider="article_extractor",
+        transcript_language="unknown",
+    )
+
+    records = load_library_records(reports_dir=reports_dir, metadata_dir=metadata_dir)
+    title_matches = search_library_records(records, "Article URL Case")
+    url_matches = search_library_records(records, "article-url-case")
+    type_matches = search_library_records(records, "article_url")
+
+    assert records[0].report_path == saved.report_path
+    assert records[0].source_type == "article_url"
+    assert records[0].video_id == ""
+    assert records[0].video_title == ""
+    assert records[0].transcript_source == "article_url"
+    assert records[0].transcript_provider == "article_extractor"
+    assert [record.report_path for record in title_matches] == [saved.report_path]
+    assert [record.report_path for record in url_matches] == [saved.report_path]
+    assert [record.report_path for record in type_matches] == [saved.report_path]
+
+
 def test_source_library_prefers_explicit_metadata_source_type(workspace):
     reports_dir = workspace / "reports" / "markdown"
     metadata_dir = workspace / "reports" / "metadata"
@@ -455,6 +489,8 @@ def _save_report(
     source_title="Sample Video",
     context_pack_path="",
     transcript_cache_path="",
+    transcript_provider=None,
+    transcript_language="zh-TW",
     generated_at=datetime(2026, 6, 10, 12, 0),
 ):
     return save_archived_report(
@@ -466,12 +502,12 @@ def _save_report(
         source_type=source_type,
         source_id=source_id or video_id,
         source_title=source_title,
-        transcript_language="zh-TW",
+        transcript_language=transcript_language,
         analysis_mode=analysis_mode,
         selected_model="gpt-5.4-mini",
         reasoning_effort="low",
         transcript_source=transcript_source,
-        transcript_provider=transcript_source,
+        transcript_provider=transcript_provider or transcript_source,
         context_pack_path=context_pack_path,
         transcript_cache_path=transcript_cache_path,
         output_language=output_language,
