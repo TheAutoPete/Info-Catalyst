@@ -137,6 +137,8 @@ reports/markdown/
 
 這個功能不會呼叫 OpenAI，也不會呼叫 YouTube。它只讀取本機 metadata 與 Markdown 報告，方便用標題、analysis mode、報告輸出語言、transcript source、source URL 或 video ID 瀏覽既有報告。
 
+Source Library 的 Library maintenance 可為較舊封存報告回填缺少的標題 metadata。Backfill 只會更新 metadata JSON，不會重新命名 Markdown 報告檔、不會刪除報告、不會呼叫 OpenAI，也不會呼叫 YouTube。
+
 ## Cost & Token Estimate
 
 產生報告前會顯示：
