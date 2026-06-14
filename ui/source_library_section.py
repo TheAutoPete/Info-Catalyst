@@ -1,7 +1,9 @@
+import logging
 from pathlib import Path
 
 import streamlit as st
 
+from services.report_archive import delete_report_record
 from services.source_library import (
     build_filter_options,
     filter_library_records,
@@ -11,8 +13,16 @@ from services.source_library import (
 )
 
 
-def render_source_library_section(open_report, *, key_prefix: str = "source-library") -> None:
-    st.subheader("Source Library")
+def render_source_library_section(
+    open_report,
+    *,
+    key_prefix: str = "source-library",
+    show_debug: bool = False,
+    result_limit: int = 25,
+    show_heading: bool = True,
+) -> None:
+    if show_heading:
+        st.subheader("Source Library")
     records = load_library_records()
     if st.button("Clear Source Library filters", key=f"{key_prefix}-clear-filters", use_container_width=True):
         st.session_state[f"{key_prefix}-search"] = ""
@@ -57,7 +67,7 @@ def render_source_library_section(open_report, *, key_prefix: str = "source-libr
         st.info("No reports found.")
         return
 
-    for index, record in enumerate(matched_records[:25]):
+    for index, record in enumerate(matched_records[:result_limit]):
         with st.container():
             st.markdown(f"**{record.display_title}**")
             details = [
@@ -87,8 +97,43 @@ def render_source_library_section(open_report, *, key_prefix: str = "source-libr
                 else:
                     st.caption("No Context Pack")
 
-    if len(matched_records) > 25:
-        st.caption("Showing the latest 25 matched reports.")
+            with st.expander("Delete this report"):
+                st.warning(
+                    "This permanently deletes the Markdown report and metadata JSON. "
+                    "Transcript cache will not be deleted."
+                )
+                confirm_key = f"{key_prefix}-confirm-delete-{index}"
+                confirmed = st.checkbox(
+                    "I understand this deletion is permanent.",
+                    key=confirm_key,
+                )
+                if st.button(
+                    "Confirm delete report",
+                    key=f"{key_prefix}-delete-report-{index}",
+                    disabled=not confirmed,
+                    use_container_width=True,
+                ):
+                    try:
+                        result = delete_report_record(record)
+                        if result["errors"]:
+                            st.error("Report deletion was not completed. No unrelated files were deleted.")
+                            if show_debug:
+                                st.code("\n".join(result["errors"]))
+                            return
+
+                        selected_path = st.session_state.get("selected_report_path", "")
+                        if selected_path and _same_path(Path(selected_path), record.report_path):
+                            st.session_state.selected_report_path = ""
+                        st.success("Report deleted.")
+                        st.rerun()
+                    except Exception as exc:
+                        logging.exception("Failed to delete archived report: %s", record.report_path)
+                        st.error("Could not delete that archived report.")
+                        if show_debug:
+                            st.code(f"{type(exc).__name__}: {exc}")
+
+    if len(matched_records) > result_limit:
+        st.caption(f"Showing the latest {result_limit} matched reports.")
 
 
 def _context_pack_available(path_text: str) -> bool:
@@ -122,3 +167,10 @@ def _open_context_pack(record) -> None:
     display_key = f"report-{record.report_path.stem}-context-pack-text"
     st.session_state[display_key] = context_path.read_text(encoding="utf-8")
     st.session_state[f"{display_key}-path"] = str(context_path)
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return left == right

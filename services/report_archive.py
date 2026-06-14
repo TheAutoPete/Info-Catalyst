@@ -1,10 +1,11 @@
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from config import REPORTS_DIR, REPORT_METADATA_DIR
+from config import REPORTS_DIR, REPORT_METADATA_DIR, REPORT_CONTEXT_DIR
 from services.output_languages import get_output_language
 from services.report_titles import (
     build_safe_report_filename,
@@ -247,6 +248,65 @@ def append_usage_record(metadata_path: Path | None, usage_record: dict[str, Any]
     return metadata
 
 
+def delete_report_record(
+    record: Any,
+    *,
+    delete_context_pack: bool = True,
+    reports_dir: Path = REPORTS_DIR,
+    metadata_dir: Path = REPORT_METADATA_DIR,
+    context_dir: Path = REPORT_CONTEXT_DIR,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "deleted_report_path": "",
+        "deleted_metadata_path": "",
+        "deleted_context_pack_path": "",
+        "skipped_paths": [],
+        "errors": [],
+    }
+
+    report_path = Path(getattr(record, "report_path", "") or "")
+    metadata_path = getattr(record, "metadata_path", None)
+    metadata_path = Path(metadata_path) if metadata_path else metadata_dir / f"{report_path.stem}.json"
+    context_pack_path = str(getattr(record, "context_pack_path", "") or "")
+
+    _delete_expected_file(
+        report_path,
+        allowed_dir=reports_dir,
+        result_key="deleted_report_path",
+        result=result,
+        label="Markdown report",
+    )
+    _delete_expected_file(
+        metadata_path,
+        allowed_dir=metadata_dir,
+        result_key="deleted_metadata_path",
+        result=result,
+        label="metadata JSON",
+    )
+
+    if delete_context_pack and context_pack_path:
+        _delete_expected_file(
+            Path(context_pack_path),
+            allowed_dir=context_dir,
+            result_key="deleted_context_pack_path",
+            result=result,
+            label="Context Pack",
+            unsafe_is_error=False,
+        )
+    elif context_pack_path:
+        result["skipped_paths"].append(str(Path(context_pack_path)))
+
+    logging.info(
+        "Deleted report archive record: report=%s metadata=%s context_pack=%s skipped=%s errors=%s",
+        result["deleted_report_path"],
+        result["deleted_metadata_path"],
+        result["deleted_context_pack_path"],
+        result["skipped_paths"],
+        result["errors"],
+    )
+    return result
+
+
 def _load_metadata_records(metadata_dir: Path) -> list[ReportRecord]:
     if not metadata_dir.exists():
         return []
@@ -259,6 +319,46 @@ def _load_metadata_records(metadata_dir: Path) -> list[ReportRecord]:
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             continue
     return records
+
+
+def _delete_expected_file(
+    path: Path,
+    *,
+    allowed_dir: Path,
+    result_key: str,
+    result: dict[str, Any],
+    label: str,
+    unsafe_is_error: bool = True,
+) -> None:
+    if not str(path):
+        return
+    path_text = str(path)
+    if not _is_path_inside(path, allowed_dir):
+        result["skipped_paths"].append(path_text)
+        if unsafe_is_error:
+            result["errors"].append(f"{label} path is outside the expected directory: {path_text}")
+        return
+    if not path.exists():
+        result["skipped_paths"].append(path_text)
+        return
+    if not path.is_file():
+        result["skipped_paths"].append(path_text)
+        result["errors"].append(f"{label} path is not a file: {path_text}")
+        return
+    try:
+        path.unlink()
+        result[result_key] = path_text
+    except OSError as exc:
+        result["errors"].append(f"Could not delete {label}: {exc}")
+
+
+def _is_path_inside(path: Path, directory: Path) -> bool:
+    try:
+        resolved_path = path.resolve()
+        resolved_directory = directory.resolve()
+        return resolved_path == resolved_directory or resolved_directory in resolved_path.parents
+    except OSError:
+        return False
 
 
 def _record_from_metadata(metadata_path: Path, metadata: dict[str, Any]) -> ReportRecord:

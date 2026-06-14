@@ -10,6 +10,7 @@ load_dotenv(BASE_DIR / ".env", override=True)
 PROMPTS_DIR = BASE_DIR / "prompts"
 REPORTS_DIR = BASE_DIR / "reports" / "markdown"
 REPORT_METADATA_DIR = BASE_DIR / "reports" / "metadata"
+REPORT_CONTEXT_DIR = BASE_DIR / "reports" / "context"
 TRANSCRIPTS_DIR = BASE_DIR / "reports" / "transcripts"
 LOGS_DIR = BASE_DIR / "logs"
 
